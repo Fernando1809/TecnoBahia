@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Generador de Reporte | Modo Oscuro + Guardado en Caché</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        /* Variables para modo claro (por defecto) */
+        :root {
+            --bg-body: linear-gradient(145deg, #e0eafc 0%, #cfdef3 100%);
+            --bg-card: rgba(255, 255, 255, 0.96);
+            --header-bg: #1e2a3e;
+            --header-text: white;
+            --text-primary: #0f172a;
+            --text-secondary: #1e293b;
+            --text-muted: #475569;
+            --border-light: #cbd5e1;
+            --preview-bg: #f8fafc;
+            --preview-text-bg: #ffffffd9;
+            --actividad-bg: #f1f5f9;
+            --actividad-border: #3b82f6;
+            --actividad-title: #0c4a6e;
+            --btn-primary-bg: #1e2a3e;
+            --btn-primary-hover: #0f172a;
+            --btn-copiar-bg: #10b981;
+            --btn-copiar-hover: #059669;
+            --btn-danger-bg: #fee2e2;
+            --btn-danger-color: #b91c1c;
+            --btn-danger-hover: #fecaca;
+            --info-nota-bg: #e6f0ff;
+            --info-nota-color: #1e40af;
+            --footer-bg: #f1f5f9;
+            --empty-color: #94a3b8;
+            --badge-bg: #3b82f6;
+            --badge-text: white;
+            --cache-badge-bg: #facc15;
+            --cache-badge-text: #1e2a3e;
+            --input-bg: white;
+            --input-border: #cbd5e1;
+        }
+
+        /* Variables para modo oscuro */
+        body.dark-mode {
+            --bg-body: linear-gradient(145deg, #0f172a 0%, #1e293b 100%);
+            --bg-card: #1e293b;
+            --header-bg: #0f172a;
+            --header-text: #e2e8f0;
+            --text-primary: #f1f5f9;
+            --text-secondary: #cbd5e1;
+            --text-muted: #94a3b8;
+            --border-light: #334155;
+            --preview-bg: #0f172a;
+            --preview-text-bg: #1e293b;
+            --actividad-bg: #334155;
+            --actividad-border: #60a5fa;
+            --actividad-title: #93c5fd;
+            --btn-primary-bg: #3b82f6;
+            --btn-primary-hover: #2563eb;
+            --btn-copiar-bg: #059669;
+            --btn-copiar-hover: #047857;
+            --btn-danger-bg: #7f1d1d;
+            --btn-danger-color: #fecaca;
+            --btn-danger-hover: #991b1b;
+            --info-nota-bg: #1e3a8a;
+            --info-nota-color: #bfdbfe;
+            --footer-bg: #0f172a;
+            --empty-color: #64748b;
+            --badge-bg: #60a5fa;
+            --badge-text: #0f172a;
+            --cache-badge-bg: #facc15;
+            --cache-badge-text: #0f172a;
+            --input-bg: #334155;
+            --input-border: #475569;
+        }
+
+        body {
+            background: var(--bg-body);
+            font-family: 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem 1rem;
+        }
+
+        .card {
+            max-width: 1100px;
+            width: 100%;
+            background: var(--bg-card);
+            border-radius: 2rem;
+            box-shadow: 0 25px 45px -12px rgba(0, 0, 0, 0.35), 0 4px 12px rgba(0, 0, 0, 0.05);
+            overflow: hidden;
+            transition: all 0.2s ease;
+        }
+
+        .header {
+            background: var(--header-bg);
+            color: var(--header-text);
+            padding: 1.8rem 2rem;
+            text-align: center;
+            position: relative;
+        }
+
+        .header h1 {
+            font-weight: 600;
+            font-size: 1.9rem;
+            letter-spacing: -0.3px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .header h1 span {
+            background: #facc15;
+            font-size: 1.6rem;
+            padding: 0 10px;
+            border-radius: 60px;
+            color: #1e2a3e;
+        }
+
+        .header p {
+            margin-top: 12px;
+            opacity: 0.85;
+            font-weight: 400;
+        }
+
+        /* Botón de modo oscuro flotante en el header */
+        .theme-toggle {
+            position: absolute;
+            top: 1.5rem;
+            right: 1.5rem;
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            border-radius: 3rem;
+            padding: 8px 16px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            backdrop-filter: blur(4px);
+            transition: 0.2s;
+        }
+
+        .theme-toggle:hover {
+            background: rgba(255, 255, 255, 0.35);
+            transform: scale(1.02);
+        }
+
+        body.dark-mode .theme-toggle {
+            background: rgba(0, 0, 0, 0.4);
+        }
+
+        body.dark-mode .theme-toggle:hover {
+            background: rgba(0, 0, 0, 0.6);
+        }
+
+        .main-content {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.5rem;
+            padding: 2rem 2rem 1.8rem;
+        }
+
+        .form-section {
+            flex: 1.2;
+            min-width: 260px;
+        }
+
+        .preview-section {
+            flex: 1;
+            min-width: 260px;
+            background: var(--preview-bg);
+            border-radius: 1.5rem;
+            padding: 1.2rem 1.5rem;
+            box-shadow: inset 0 1px 3px #0001, 0 4px 8px #0001;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group {
+            margin-bottom: 1.6rem;
+        }
+
+        label {
+            font-weight: 600;
+            display: block;
+            margin-bottom: 8px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            letter-spacing: -0.2px;
+        }
+
+        input, textarea, select {
+            width: 100%;
+            padding: 12px 14px;
+            font-size: 0.95rem;
+            font-family: inherit;
+            border: 1.5px solid var(--input-border);
+            border-radius: 1rem;
+            background: var(--input-bg);
+            color: var(--text-primary);
+            transition: 0.2s;
+            outline: none;
+        }
+
+        input:focus, textarea:focus, select:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59,130,246,0.2);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        .actividad-item {
+            background: var(--actividad-bg);
+            border-radius: 1.2rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-left: 6px solid var(--actividad-border);
+            transition: all 0.2s;
+        }
+
+        .actividad-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .actividad-titulo {
+            font-weight: 700;
+            color: var(--actividad-title);
+            font-size: 0.95rem;
+        }
+
+        .actividad-desc {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin: 8px 0;
+            word-break: break-word;
+        }
+
+        .btn-icon {
+            background: none;
+            border: none;
+            font-size: 1.1rem;
+            cursor: pointer;
+            color: #ef4444;
+            font-weight: bold;
+            transition: 0.1s;
+            padding: 0 6px;
+        }
+
+        .btn-icon:hover {
+            transform: scale(1.1);
+            color: #f87171;
+        }
+
+        .badge-count {
+            background: var(--badge-bg);
+            color: var(--badge-text);
+            border-radius: 40px;
+            padding: 4px 12px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        button {
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary {
+            background: var(--btn-primary-bg);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 2rem;
+            font-size: 0.9rem;
+            font-weight: 600;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            box-shadow: 0 2px 6px #0001;
+        }
+
+        .btn-primary:hover {
+            background: var(--btn-primary-hover);
+            transform: translateY(-2px);
+        }
+
+        .btn-copiar {
+            background: var(--btn-copiar-bg);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 2rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-copiar:hover {
+            background: var(--btn-copiar-hover);
+            transform: translateY(-1px);
+        }
+
+        .btn-danger {
+            background: var(--btn-danger-bg);
+            color: var(--btn-danger-color);
+            border: none;
+            padding: 8px 16px;
+            border-radius: 2rem;
+            font-size: 0.8rem;
+        }
+
+        .btn-danger:hover {
+            background: var(--btn-danger-hover);
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .preview-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            border-bottom: 2px dashed var(--border-light);
+            padding-bottom: 8px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            gap: 10px;
+            color: var(--text-primary);
+        }
+
+        .preview-box {
+            flex: 1;
+            background: var(--preview-text-bg);
+            border-radius: 1rem;
+            padding: 0.8rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.75rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow-y: auto;
+            max-height: 340px;
+            border: 1px solid var(--border-light);
+            line-height: 1.5;
+            color: var(--text-secondary);
+        }
+
+        .empty-preview {
+            color: var(--empty-color);
+            text-align: center;
+            padding: 2rem 0;
+            font-style: italic;
+        }
+
+        .toast-notification {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e293b;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 40px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            z-index: 1000;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+            animation: fadeInUp 0.3s ease;
+            pointer-events: none;
+        }
+
+        body.dark-mode .toast-notification {
+            background: #0f172a;
+            color: #e2e8f0;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateX(-50%) translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+        }
+
+        footer {
+            background: var(--footer-bg);
+            text-align: center;
+            padding: 1rem;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            border-top: 1px solid var(--border-light);
+        }
+
+        @media (max-width: 720px) {
+            .main-content {
+                padding: 1.5rem;
+            }
+            .header h1 {
+                font-size: 1.5rem;
+            }
+            .theme-toggle {
+                position: relative;
+                top: 0;
+                right: 0;
+                margin-top: 12px;
+                justify-content: center;
+                width: fit-content;
+                margin-left: auto;
+                margin-right: auto;
+            }
+            .header {
+                display: flex;
+                flex-direction: column;
+            }
+        }
+        
+        .info-nota {
+            background: var(--info-nota-bg);
+            border-radius: 0.8rem;
+            padding: 8px 12px;
+            font-size: 0.7rem;
+            color: var(--info-nota-color);
+            margin-top: 12px;
+            text-align: center;
+        }
+
+        .cache-badge {
+            background: var(--cache-badge-bg);
+            color: var(--cache-badge-text);
+            border-radius: 30px;
+            padding: 4px 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        ::placeholder {
+            color: var(--text-muted);
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+<div class="card">
+    <div class="header">
+        <h1>
+            📋 Generador de Reporte
+            <span>.TXT</span>
+        </h1>
+        <p>Registra tus actividades diarias — <span class="cache-badge">💾 Guardado automático en caché</span></p>
+        <button id="themeToggleBtn" class="theme-toggle">🌙 Modo oscuro</button>
+    </div>
+
+    <div class="main-content">
+        <!-- COLUMNA IZQUIERDA: Formulario para añadir actividad -->
+        <div class="form-section">
+            <div style="margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: baseline;">
+                <h3 style="color: var(--text-primary);">➕ Nueva actividad</h3>
+                <span id="contadorActividades" class="badge-count">0 actividades</span>
+            </div>
+
+            <div class="form-group">
+                <label>📌 Título / tarea realizada</label>
+                <input type="text" id="tituloActividad" placeholder="Ej: Revisión de informes, reunión con cliente..." autocomplete="off">
+            </div>
+
+            <div class="form-group">
+                <label>📝 Descripción detallada</label>
+                <textarea id="descActividad" placeholder="Describe en qué consistió la actividad, logros, observaciones..."></textarea>
+            </div>
+
+            <button id="btnAgregar" class="btn-primary">
+                ✚ Agregar actividad al reporte
+            </button>
+
+            <div class="action-buttons">
+                <button id="btnLimpiarTodo" class="btn-danger">🗑️ Eliminar todas</button>
+            </div>
+
+            <div class="info-nota">
+                💾 <strong>Guardado automático</strong> — Tus actividades se guardan en la caché del navegador. Puedes cerrar la página y al volver seguirán aquí.
+            </div>
+        </div>
+
+        <!-- COLUMNA DERECHA: Lista de actividades + vista previa y botón copiar -->
+        <div class="preview-section">
+            <div class="preview-header">
+                <h3 style="font-size: 1.2rem;">📄 Mis actividades</h3>
+                <button id="btnCopiarTxt" class="btn-copiar">
+                    📋 Copiar reporte
+                </button>
+            </div>
+
+            <div id="listaActividadesContainer" style="max-height: 280px; overflow-y: auto; margin-bottom: 18px;">
+                <div id="listaVaciaMsg" class="empty-preview">✨ No hay actividades registradas.<br>Agrega desde el formulario.</div>
+                <div id="actividadesDinamicas"></div>
+            </div>
+
+            <div style="margin-top: 8px;">
+                <div class="preview-header" style="margin-bottom: 8px;">
+                    <span style="font-weight: 600;">🔍 Vista previa del reporte</span>
+                    <span style="font-size: 0.7rem;">(sin fechas redundantes)</span>
+                </div>
+                <div id="previewTxt" class="preview-box">
+                    <span class="empty-preview">Aún no hay actividades para mostrar</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <footer>
+        ⚡ Los datos persisten en localStorage. Al copiar el reporte, la fecha de generación aparece una sola vez al inicio. ¡Actualiza sin miedo! | 🌓 Alterna el tema con el botón superior.
+    </footer>
+</div>
+
+<script>
+    // ---------- CLAVE PARA LOCALSTORAGE ----------
+    const STORAGE_KEY = 'reporte_actividades_app';
+    const THEME_KEY = 'dark_mode_preference';
+
+    // ---------- ARRAY DONDE ALMACENAMOS LAS ACTIVIDADES (solo título y descripción, sin fecha individual) ----------
+    let actividades = [];
+
+    // Elementos del DOM
+    const tituloInput = document.getElementById('tituloActividad');
+    const descInput = document.getElementById('descActividad');
+    const btnAgregar = document.getElementById('btnAgregar');
+    const btnLimpiarTodo = document.getElementById('btnLimpiarTodo');
+    const btnCopiarTxt = document.getElementById('btnCopiarTxt');
+    const actividadesDinamicasDiv = document.getElementById('actividadesDinamicas');
+    const listaVaciaMsg = document.getElementById('listaVaciaMsg');
+    const contadorSpan = document.getElementById('contadorActividades');
+    const previewTxtDiv = document.getElementById('previewTxt');
+    const themeToggleBtn = document.getElementById('themeToggleBtn');
+
+    // ---------- FUNCIONES DE MODO OSCURO ----------
+    function aplicarModoOscuro(activar) {
+        if (activar) {
+            document.body.classList.add('dark-mode');
+            themeToggleBtn.innerHTML = '☀️ Modo claro';
+            localStorage.setItem(THEME_KEY, 'dark');
+        } else {
+            document.body.classList.remove('dark-mode');
+            themeToggleBtn.innerHTML = '🌙 Modo oscuro';
+            localStorage.setItem(THEME_KEY, 'light');
+        }
+        // Forzar actualización de colores en elementos dinámicos (por si algún elemento no se actualiza bien)
+        if (actividades.length > 0) {
+            generarPreviewReporte();
+        }
+    }
+
+    function alternarModoOscuro() {
+        const isDark = document.body.classList.contains('dark-mode');
+        aplicarModoOscuro(!isDark);
+    }
+
+    function cargarPreferenciaModo() {
+        const preferencia = localStorage.getItem(THEME_KEY);
+        if (preferencia === 'dark') {
+            aplicarModoOscuro(true);
+        } else if (preferencia === 'light') {
+            aplicarModoOscuro(false);
+        } else {
+            // Detectar preferencia del sistema
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            if (prefersDark) {
+                aplicarModoOscuro(true);
+            } else {
+                aplicarModoOscuro(false);
+            }
+        }
+    }
+
+    // ---------- FUNCIONES DE PERSISTENCIA (localStorage) ----------
+    function guardarEnCache() {
+        try {
+            const dataToSave = JSON.stringify(actividades);
+            localStorage.setItem(STORAGE_KEY, dataToSave);
+            console.log('✅ Actividades guardadas en caché:', actividades.length);
+        } catch (e) {
+            console.error('Error al guardar en localStorage:', e);
+        }
+    }
+
+    function cargarDesdeCache() {
+        try {
+            const dataGuardada = localStorage.getItem(STORAGE_KEY);
+            if (dataGuardada) {
+                const parsed = JSON.parse(dataGuardada);
+                if (Array.isArray(parsed)) {
+                    actividades = parsed;
+                    console.log('📀 Datos cargados desde caché:', actividades.length, 'actividades');
+                } else {
+                    actividades = [];
+                }
+            } else {
+                actividades = [];
+                console.log('No hay datos en caché, iniciando vacío');
+            }
+        } catch (e) {
+            console.error('Error al leer localStorage:', e);
+            actividades = [];
+        }
+        // Sanitizar: asegurar campos necesarios
+        actividades = actividades.map(act => ({
+            id: act.id || Date.now(),
+            titulo: act.titulo || 'Sin título',
+            descripcion: act.descripcion || ''
+        }));
+    }
+
+    // ---------- FUNCIÓN PARA OBTENER LA FECHA ACTUAL ----------
+    function getFechaActualFormateada() {
+        const hoy = new Date();
+        const opciones = { year: 'numeric', month: 'long', day: 'numeric' };
+        return hoy.toLocaleDateString('es-ES', opciones);
+    }
+    
+    function getFechaCompletaConHora() {
+        const hoy = new Date();
+        return hoy.toLocaleString('es-ES', { dateStyle: 'full', timeStyle: 'short' });
+    }
+
+    // Función para generar el contenido del reporte en formato .txt
+    function generarContenidoReporte() {
+        if (actividades.length === 0) {
+            return "=== REPORTE DE ACTIVIDADES ===\n\nNo se registraron actividades en este período.\n";
+        }
+
+        const fechaGeneracion = getFechaCompletaConHora();
+        const fechaDia = getFechaActualFormateada();
+        
+        let contenido = `📋 REPORTE DE ACTIVIDADES\n`;
+        contenido += `🗓️ Fecha de generación: ${fechaGeneracion}\n`;
+        contenido += `📅 Día laboral: ${fechaDia}\n`;
+        contenido += `📊 Total de actividades realizadas: ${actividades.length}\n`;
+        contenido += `══════════════════════════════════════════════════════\n\n`;
+        contenido += `Actividades registradas:\n\n`;
+
+        actividades.forEach((act, i) => {
+            const num = i + 1;
+            contenido += `${num}. ${act.titulo}\n`;
+            const lineasDesc = act.descripcion.split(/\r?\n/);
+            lineasDesc.forEach(linea => {
+                contenido += `   ${linea}\n`;
+            });
+            contenido += `\n`;
+        });
+        contenido += `══════════════════════════════════════════════════════\n`;
+        contenido += `✨ Fin del reporte — Todas las actividades corresponden a la fecha actual ✨\n`;
+        return contenido;
+    }
+
+    // Mostrar notificación tipo toast
+    function mostrarNotificacion(mensaje, esError = false) {
+        const existingToast = document.querySelector('.toast-notification');
+        if (existingToast) existingToast.remove();
+        
+        const toast = document.createElement('div');
+        toast.className = 'toast-notification';
+        toast.textContent = mensaje;
+        if (esError) {
+            toast.style.backgroundColor = '#dc2626';
+        } else {
+            toast.style.backgroundColor = '#10b981';
+        }
+        document.body.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.remove();
+        }, 2500);
+    }
+
+    // Función para copiar el contenido al portapapeles
+    async function copiarContenidoAlPortapapeles() {
+        if (actividades.length === 0) {
+            mostrarNotificacion("📭 No hay actividades para copiar. Agrega al menos una actividad.", true);
+            return;
+        }
+        
+        const contenido = generarContenidoReporte();
+        
+        try {
+            await navigator.clipboard.writeText(contenido);
+            mostrarNotificacion(`✅ ¡Reporte copiado! (${actividades.length} actividades) - Fecha actual`);
+        } catch (err) {
+            try {
+                const textarea = document.createElement('textarea');
+                textarea.value = contenido;
+                textarea.style.position = 'fixed';
+                textarea.style.top = '-1000px';
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                mostrarNotificacion(`✅ ¡Reporte copiado! (${actividades.length} actividades)`);
+            } catch (fallbackErr) {
+                mostrarNotificacion("❌ No se pudo copiar. Revisa permisos del navegador.", true);
+            }
+        }
+    }
+
+    // Actualizar la interfaz y guardar automáticamente en caché
+    function actualizarUI() {
+        const total = actividades.length;
+        contadorSpan.innerText = total + (total === 1 ? " actividad" : " actividades");
+
+        if (total === 0) {
+            listaVaciaMsg.style.display = 'block';
+            actividadesDinamicasDiv.innerHTML = '';
+            previewTxtDiv.innerHTML = '<span class="empty-preview">📭 No hay actividades. Agrega tareas para generar el reporte.</span>';
+            guardarEnCache();
+            return;
+        } else {
+            listaVaciaMsg.style.display = 'none';
+        }
+
+        // Renderizar lista de actividades
+        let htmlActividades = '';
+        actividades.forEach((act, index) => {
+            let descCorta = act.descripcion.length > 80 ? act.descripcion.substring(0, 77) + '...' : act.descripcion;
+            htmlActividades += `
+                <div class="actividad-item" data-idx="${index}">
+                    <div class="actividad-header">
+                        <span class="actividad-titulo">📌 ${escapeHtml(act.titulo)}</span>
+                        <button class="btn-icon eliminar-individual" data-index="${index}" title="Eliminar actividad">🗑️</button>
+                    </div>
+                    <div class="actividad-desc">📄 ${escapeHtml(descCorta)}</div>
+                </div>
+            `;
+        });
+        actividadesDinamicasDiv.innerHTML = htmlActividades;
+
+        document.querySelectorAll('.eliminar-individual').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const idx = parseInt(btn.getAttribute('data-index'));
+                if (!isNaN(idx)) {
+                    eliminarActividad(idx);
+                }
+            });
+        });
+
+        generarPreviewReporte();
+        guardarEnCache();
+    }
+
+    function generarPreviewReporte() {
+        if (actividades.length === 0) {
+            previewTxtDiv.innerHTML = '<span class="empty-preview">📭 Vista previa vacía. Añade actividades.</span>';
+            return;
+        }
+        const contenido = generarContenidoReporte();
+        previewTxtDiv.innerText = contenido;
+    }
+
+    function eliminarActividad(index) {
+        if (index >= 0 && index < actividades.length) {
+            actividades.splice(index, 1);
+            actualizarUI();
+            mostrarNotificacion("🗑️ Actividad eliminada");
+        }
+    }
+
+    function agregarActividad() {
+        let titulo = tituloInput.value.trim();
+        let descripcion = descInput.value.trim();
+
+        if (titulo === "") {
+            alert("❌ Por favor, escribe un título para la actividad.");
+            tituloInput.focus();
+            return false;
+        }
+        if (descripcion === "") {
+            alert("❌ La descripción no puede estar vacía. Describe la actividad realizada.");
+            descInput.focus();
+            return false;
+        }
+
+        const nuevaActividad = {
+            id: Date.now(),
+            titulo: titulo,
+            descripcion: descripcion
+        };
+        actividades.push(nuevaActividad);
+
+        tituloInput.value = "";
+        descInput.value = "";
+        tituloInput.focus();
+
+        actualizarUI();
+        mostrarNotificacion("✨ Actividad agregada correctamente");
+        return true;
+    }
+
+    function limpiarTodasActividades() {
+        if (actividades.length === 0) return;
+        const confirmar = confirm("⚠️ ¿Estás seguro de eliminar TODAS las actividades registradas? Esta acción también borrará los datos guardados en caché.");
+        if (confirmar) {
+            actividades = [];
+            actualizarUI();
+            mostrarNotificacion("🧹 Todas las actividades fueron eliminadas (caché actualizado)");
+        }
+    }
+
+    // Eventos
+    btnAgregar.addEventListener('click', (e) => {
+        e.preventDefault();
+        agregarActividad();
+    });
+
+    const camposForm = [tituloInput, descInput];
+    camposForm.forEach(campo => {
+        campo.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                agregarActividad();
+            }
+        });
+    });
+
+    btnLimpiarTodo.addEventListener('click', limpiarTodasActividades);
+    btnCopiarTxt.addEventListener('click', copiarContenidoAlPortapapeles);
+    themeToggleBtn.addEventListener('click', alternarModoOscuro);
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    // Inicialización
+    function init() {
+        cargarPreferenciaModo();
+        cargarDesdeCache();
+        actualizarUI();
+        if (actividades.length > 0) {
+            setTimeout(() => {
+                mostrarNotificacion(`📀 ${actividades.length} actividades cargadas desde la caché`, false);
+            }, 500);
+        }
+    }
+
+    init();
+</script>
+</body>
+</html>
