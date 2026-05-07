@@ -112,6 +112,71 @@
       gap: 10px;
     }
 
+    .user-selector {
+      position: relative;
+      display: inline-block;
+    }
+
+    .user-selector-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      height: 44px;
+      padding: 0;
+      border: none;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.18);
+      color: white;
+      cursor: pointer;
+      font-size: 1.25rem;
+      line-height: 1;
+      transition: background .15s ease;
+    }
+
+    .user-selector-btn:hover {
+      background: rgba(255, 255, 255, 0.28);
+    }
+
+    .user-selector-dropdown {
+      display: none;
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      background: var(--dropdown-bg);
+      border-radius: var(--card-radius);
+      box-shadow: 0 12px 28px var(--tile-shadow-hover);
+      z-index: 100;
+      overflow: hidden;
+      flex-direction: column;
+      min-width: 150px;
+    }
+
+    .user-selector-dropdown.open {
+      display: flex;
+    }
+
+    .user-selector-dropdown a {
+      display: block;
+      padding: 12px 14px;
+      text-decoration: none;
+      color: var(--dropdown-text);
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--dropdown-border);
+      cursor: pointer;
+    }
+
+    .user-selector-dropdown a:last-child {
+      border-bottom: none;
+    }
+
+    .user-selector-dropdown a:hover {
+      background: var(--dropdown-hover-bg);
+      color: var(--blue-700);
+    }
+
     .theme-toggle {
       display: inline-flex;
       align-items: center;
@@ -291,6 +356,15 @@
       <p>SHORTCUTS DEL ADMIN</p>
     </div>
     <div class="header-actions">
+      <div class="user-selector">
+        <button type="button" class="user-selector-btn" id="userSelectorBtn" title="Cambiar usuario" aria-label="Cambiar usuario">
+          <i class="bi bi-person-circle" aria-hidden="true"></i>
+        </button>
+        <div class="user-selector-dropdown" id="userSelectorDropdown">
+          <a href="IndexJiqui.html">JIQUI</a>
+          <a href="IndexUsu.html">USULUTAN</a>
+        </div>
+      </div>
       <button type="button" class="theme-toggle" id="themeToggle" title="Modo oscuro" aria-label="Activar modo oscuro">
         <i class="bi bi-moon-stars-fill" id="themeToggleIcon" aria-hidden="true"></i>
       </button>
@@ -422,6 +496,46 @@
   </main>
 
   <script>
+    function handleAdmonAccess(event) {
+      event.preventDefault();
+      // Ya estamos en ADMON, solo cerrar el dropdown
+      const dropdown = document.getElementById('userSelectorDropdown');
+      dropdown.classList.remove('open');
+    }
+
+    (function initUserSelector() {
+      const btn = document.getElementById('userSelectorBtn');
+      const dropdown = document.getElementById('userSelectorDropdown');
+      if (!btn || !dropdown) return;
+
+      function setOpen(open) {
+        dropdown.classList.toggle('open', open);
+      }
+
+      function toggle(e) {
+        e.stopPropagation();
+        setOpen(!dropdown.classList.contains('open'));
+      }
+
+      btn.addEventListener('click', toggle);
+      btn.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          setOpen(!dropdown.classList.contains('open'));
+        } else if (e.key === 'Escape') {
+          setOpen(false);
+        }
+      });
+
+      document.addEventListener('click', function () {
+        setOpen(false);
+      });
+
+      dropdown.addEventListener('click', function (e) {
+        e.stopPropagation();
+      });
+    })();
+
     (function initThemeToggle() {
       var KEY = 'tecno-bahia-theme';
       var root = document.documentElement;
