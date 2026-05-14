@@ -329,6 +329,82 @@
     align-items: center;
   }
   
+  .pagination {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-top: 10px;
+    font-size: 14px;
+  }
+  
+  .pagination button {
+    border: 1px solid var(--border);
+    background: var(--input-bg);
+    color: var(--text);
+    padding: 8px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  
+  .pagination button:disabled {
+    opacity: var(--disabled-opacity);
+    cursor: not-allowed;
+  }
+  
+  .pagination .page-info {
+    color: var(--muted);
+  }
+  
+  #adminSearchInput {
+    min-width: 150px;
+    max-width: 320px;
+    width: 100%;
+  }
+  
+  @media (max-width: 820px) {
+    .filter-row,
+    .view-title,
+    .admin-actions,
+    .admin-tools,
+    .admin-filters,
+    .row {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .admin-actions button,
+    .admin-tools button,
+    .admin-tools input,
+    .admin-filters input,
+    .filter-buttons,
+    .pagination {
+      width: 100%;
+    }
+    .admin-actions button,
+    .admin-tools button,
+    .admin-filters input {
+      min-width: 0;
+    }
+    .admin-filters {
+      gap: 8px;
+    }
+    .admin-table,
+    .admin-table thead,
+    .admin-table tbody,
+    .admin-table tr,
+    .admin-table th,
+    .admin-table td {
+      font-size: 13px;
+    }
+    .admin-table input {
+      width: 100%;
+      min-width: 0;
+    }
+    .pagination {
+      justify-content: flex-start;
+    }
+  }
+  
   .sku-warning {
     color: var(--danger);
     font-size: 11px;
@@ -477,6 +553,7 @@
             </table>
           </div>
           <div id="adminFilterInfo" style="font-size:12px; color:var(--muted); margin-top:8px;"></div>
+          <div id="adminPagination" class="pagination"></div>
         </div>
       </div>
     </div>
@@ -493,6 +570,8 @@ const state = {
   adminUnlocked: false,
   activeFilter: "all",
   adminActiveFilter: "all",
+  adminPage: 1,
+  adminPageSize: 10,
   listaCompleta: [], // Productos de la lista completa con precios
   preciosLookup: {}, // Lookup rápido de códigos -> precio
   pedidoTemplateBase64: null,
@@ -1158,6 +1237,73 @@ function renderAdminTable(data) {
   });
 }
 
+function renderAdminPagination(currentPage, totalPages, totalItems) {
+  const paginationEl = document.getElementById('adminPagination');
+  if (!paginationEl) return;
+  paginationEl.innerHTML = '';
+  if (totalPages <= 1) {
+    paginationEl.textContent = totalItems ? `Página ${currentPage} de ${totalPages} — ${totalItems} SKUs` : '';
+    return;
+  }
+
+  const prevBtn = document.createElement('button');
+  prevBtn.type = 'button';
+  prevBtn.textContent = '« Anterior';
+  prevBtn.disabled = currentPage <= 1;
+  prevBtn.addEventListener('click', () => {
+    state.adminPage = Math.max(1, state.adminPage - 1);
+    applyAdminFilter();
+  });
+
+  const nextBtn = document.createElement('button');
+  nextBtn.type = 'button';
+  nextBtn.textContent = 'Siguiente »';
+  nextBtn.disabled = currentPage >= totalPages;
+  nextBtn.addEventListener('click', () => {
+    state.adminPage = Math.min(totalPages, state.adminPage + 1);
+    applyAdminFilter();
+  });
+
+  const pageInfo = document.createElement('span');
+  pageInfo.className = 'page-info';
+  pageInfo.textContent = `Página ${currentPage} de ${totalPages} — ${totalItems} SKUs`;
+
+  function createPageButton(page) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = page;
+    btn.disabled = page === currentPage;
+    if (page !== currentPage) {
+      btn.addEventListener('click', () => {
+        state.adminPage = page;
+        applyAdminFilter();
+      });
+    }
+    return btn;
+  }
+
+  paginationEl.appendChild(prevBtn);
+  if (currentPage > 2) paginationEl.appendChild(createPageButton(1));
+  if (currentPage > 3) {
+    const ellipsis = document.createElement('span');
+    ellipsis.textContent = '...';
+    ellipsis.style.padding = '0 6px';
+    paginationEl.appendChild(ellipsis);
+  }
+  for (let page = Math.max(1, currentPage - 1); page <= Math.min(totalPages, currentPage + 1); page++) {
+    paginationEl.appendChild(createPageButton(page));
+  }
+  if (currentPage < totalPages - 2) {
+    const ellipsis = document.createElement('span');
+    ellipsis.textContent = '...';
+    ellipsis.style.padding = '0 6px';
+    paginationEl.appendChild(ellipsis);
+  }
+  if (currentPage < totalPages) paginationEl.appendChild(createPageButton(totalPages));
+  paginationEl.appendChild(nextBtn);
+  paginationEl.appendChild(pageInfo);
+}
+
 function applyAdminFilter() {
   if (!state.adminUnlocked) return;
   const searchTerm = norm(document.getElementById("adminSearchInput")?.value || "");
@@ -1172,15 +1318,22 @@ function applyAdminFilter() {
   if (searchTerm) {
     source = source.filter(r => norm(r.SKU).includes(searchTerm) || norm(r.Producto).includes(searchTerm));
   }
-  
-  renderAdminTable(source);
-  
+
+  const totalItems = source.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / state.adminPageSize));
+  state.adminPage = Math.min(Math.max(1, state.adminPage), totalPages);
+  const startIndex = (state.adminPage - 1) * state.adminPageSize;
+  const pageRows = source.slice(startIndex, startIndex + state.adminPageSize);
+
+  renderAdminTable(pageRows);
+  renderAdminPagination(state.adminPage, totalPages, totalItems);
+
   const filterInfo = document.getElementById("adminFilterInfo");
   if (filterInfo) {
     let text = "";
-    if (state.adminActiveFilter === "all") text = "Mostrando todos los SKUs";
-    else if (state.adminActiveFilter === "conRegla") text = `✅ Mostrando SKUs con reglas definidas (${source.length})`;
-    else if (state.adminActiveFilter === "sinRegla") text = `📭 Mostrando SKUs sin reglas (${source.length})`;
+    if (state.adminActiveFilter === "all") text = `Mostrando ${pageRows.length} de ${totalItems} SKUs (Filtro: todos)`;
+    else if (state.adminActiveFilter === "conRegla") text = `✅ Mostrando ${pageRows.length} de ${totalItems} SKUs con reglas definidas`;
+    else if (state.adminActiveFilter === "sinRegla") text = `📭 Mostrando ${pageRows.length} de ${totalItems} SKUs sin reglas`;
     filterInfo.textContent = text;
   }
 }
