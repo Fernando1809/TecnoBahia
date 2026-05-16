@@ -37,7 +37,7 @@ function handleFile(e) {
       state.rawJson = json;
       state.columnMap = map;
       
-      // Ejecutar motor de reabastecimiento y refrescar botones de acción
+      // Ejecutar motor de reabastecimiento y refrescar botones
       recalculateRows();
       if (typeof updateExportButtonState === "function") updateExportButtonState();
       
@@ -65,7 +65,7 @@ function exportResults() {
   }
 
   const productsToOrder = state.rows.filter(r => r.PedidoSugerido > 0);
-  const wb = getPedidoWorkbook(); // Función de descompresión de plantilla base64
+  const wb = getPedidoWorkbook(); // Función de descompresión o parseo de plantilla base64 activa
   if (!wb) {
     setStatus("No se pudo leer la plantilla PEDIDO maestra.", true);
     return;
@@ -90,7 +90,7 @@ function exportResults() {
     ["B", "C", "D", "E", "F", "G"].forEach(col => delete wsPedido[`${col}${row}`]);
   }
 
-  // Inyección estructurada de registros a pedir (Límite físico de 100 ranuras de diseño)
+  // Inyección estructurada de registros a pedir (Límite físico de 100 ranuras libres)
   for (let idx = 0; idx < 100; idx++) {
     const rowNumber = 8 + idx;
     if (idx < productsToOrder.length) {
@@ -109,7 +109,7 @@ function exportResults() {
     }
   }
 
-  // Asegurar formato contable en celdas de sumatorias/totales superiores de la plantilla
+  // Asegurar formato contable en celdas de sumatorias/totales superiores si existen
   if (wsPedido["G3"]) wsPedido["G3"].z = "$#,##0.00";
   if (wsPedido["G4"]) wsPedido["G4"].z = "$#,##0.00";
   if (wsPedido["G5"]) wsPedido["G5"].z = "$#,##0.00";
@@ -118,5 +118,5 @@ function exportResults() {
   const fileDate = today.toISOString().slice(0, 10);
   XLSX.writeFile(wb, `PEDIDO_${fileDate}.xlsx`, { bookType: "xlsx", cellDates: true });
   
-  setStatus(`📁 Pedido descargado con éxito. ${productsToOrder.length} productos para pedido` + (productsToOrder.length === 0 ? ", filas en blanco generadas." : "."));
+  setStatus(`📁 Pedido descargado con éxito. ${productsToOrder.length} productos procesados.`);
 }

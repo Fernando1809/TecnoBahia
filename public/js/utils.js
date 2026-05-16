@@ -4,25 +4,22 @@
  * Carga la plantilla de Excel por defecto en formato Base64 en el estado global.
  * @returns {boolean} True si se cargó correctamente, False de lo contrario.
  */
-function loadDefaultPedidoTemplate() {
-  if (state.pedidoTemplateLoaded) return true;
+async function loadDefaultPedidoTemplate() {
   try {
-    state.pedidoTemplateBase64 = DEFAULT_PEDIDO_TEMPLATE_BASE64;
-    const wb = getPedidoWorkbook(); // Nota: Asegúrate de que esta función esté definida en tu lógica de Excel
-    if (!wb) throw new Error("No se pudo leer la plantilla embebida");
-    
-    state.pedidoTemplateLoaded = true;
-    state.pedidoTemplateName = DEFAULT_PEDIDO_TEMPLATE_NAME;
-    updateExportButtonState();
-    return true;
-  } catch (err) {
-    console.error("Error cargando plantilla embebida:", err);
-    state.pedidoTemplateBase64 = null;
-    state.pedidoTemplateLoaded = false;
-    state.pedidoTemplateName = null;
-    if (typeof updateExportButtonState === "function") updateExportButtonState();
-    setStatus("No se pudo cargar la plantilla PEDIDO embebida.", true);
-    return false;
+    const templateData = await firestoreGetDocData("pedidoTemplate");
+    if (templateData && templateData.pedidoTemplateBase64) {
+      state.pedidoTemplateBase64 = templateData.pedidoTemplateBase64;
+      state.pedidoTemplateLoaded = true;
+      state.pedidoTemplateName = templateData.pedidoTemplateName || "Plantilla Base";
+      if (typeof updateExportButtonState === "function") {
+        updateExportButtonState();
+      }
+    } else {
+      console.warn("Aviso: No hay una plantilla guardada en Firestore aún.");
+    }
+  } catch (e) {
+    // Se cambia el mensaje en pantalla por un aviso silencioso en la consola de desarrollo (F12)
+    console.warn("Aviso: La plantilla predeterminada no se ha configurado en la base de datos.", e);
   }
 }
 

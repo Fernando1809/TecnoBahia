@@ -6,17 +6,11 @@
  * =========================================================================
  */
 
-/**
- * Retorna la referencia del documento dentro de la colección central de Firestore.
- */
 function getFirestoreDocRef(name) {
   if (!window.db || !window.doc) throw new Error("Firestore no está inicializado");
   return window.doc(window.db, "auxiliar-inventario", name);
 }
 
-/**
- * Trae de forma asíncrona los datos de un documento de Firestore.
- */
 async function firestoreGetDocData(name) {
   if (!window.db || !window.getDoc) return {};
   try {
@@ -29,9 +23,6 @@ async function firestoreGetDocData(name) {
   }
 }
 
-/**
- * Guarda o combina datos de manera estructurada en un documento de Firestore.
- */
 async function firestoreSetDocData(name, data) {
   if (!window.db || !window.setDoc) return;
   try {
@@ -42,17 +33,11 @@ async function firestoreSetDocData(name, data) {
   }
 }
 
-/**
- * Descarga las reglas de mínimos y máximos asignadas desde Firebase.
- */
 async function loadRules() {
   const data = await firestoreGetDocData("adminRules");
   state.adminRules = data.adminRules || {};
 }
 
-/**
- * Carga el catálogo maestro completo, indexación de precios lookup y la plantilla base64.
- */
 async function loadListaCompleta() {
   try {
     const data = await firestoreGetDocData("listaCompleta");
@@ -72,9 +57,6 @@ async function loadListaCompleta() {
   }
 }
 
-/**
- * Persiste la lista maestra de precios y codificaciones en la nube.
- */
 async function saveListaCompleta() {
   try {
     await firestoreSetDocData("listaCompleta", {
@@ -86,9 +68,6 @@ async function saveListaCompleta() {
   }
 }
 
-/**
- * Sube o guarda la plantilla de Excel maestra del pedido en formato Base64.
- */
 async function savePedidoTemplate() {
   try {
     if (state.pedidoTemplateBase64) {
@@ -102,9 +81,6 @@ async function savePedidoTemplate() {
   }
 }
 
-/**
- * Parsea la plantilla de pedido base64 activa hacia un libro de SheetJS usable.
- */
 function getPedidoWorkbook() {
   if (!state.pedidoTemplateBase64) return null;
   try {
@@ -115,34 +91,22 @@ function getPedidoWorkbook() {
   }
 }
 
-/**
- * Cambia la disponibilidad física del botón de descarga según las dependencias cargadas.
- */
 function updateExportButtonState() {
   const btn = document.getElementById("btnExport");
   const enabled = state.rows && state.rows.length > 0 && state.pedidoTemplateLoaded;
   if (btn) btn.disabled = !enabled;
 }
 
-/**
- * Sincroniza las reglas de mínimos y máximos actuales con Firestore.
- */
 async function persistRules() { 
   await firestoreSetDocData("adminRules", { adminRules: state.adminRules }); 
 }
 
-/**
- * Trae las preferencias de entorno del usuario (Vistas y modo oscuro).
- */
 async function loadSettings() {
   const data = await firestoreGetDocData("settings");
   state.currentView = data.currentView || "report";
   state.darkMode = data.darkMode || false;
 }
 
-/**
- * Sincroniza configuraciones estéticas con la nube.
- */
 async function persistSettings() {
   await firestoreSetDocData("settings", {
     currentView: state.currentView,
@@ -152,48 +116,124 @@ async function persistSettings() {
 
 /**
  * =========================================================================
- * 🔐 SECCIÓN 2: AUTENTICACIÓN Y SEGURIDAD (FIREBASE AUTH)
+ * 🔐 SECCIÓN 2: AUTENTICACIÓN, ROLES Y SEGURIDAD
  * =========================================================================
  */
 
 /**
- * Valida credenciales contra Firebase Authentication para dar paso al panel.
+ * Consulta el rol del usuario en la colección central "usuarios" de Firestore
  */
-async function unlockAdminPanel() {
-  const email = document.getElementById('usuarioEmail').value;
-  const pass = document.getElementById('usuarioPass').value;
-
-  if (!email || !pass) {
-    setStatus("❌ Ingresa correo y contraseña.", true);
-    return;
-  }
-
+async function getUserRole(uid, email) {
+  if (!window.db || !window.getDoc) return "usuario";
   try {
-    await window.signInWithEmailAndPassword(window.auth, email, pass);
-    state.adminUnlocked = true;
-    updateAdminLockUI();
-    applyAdminFilter();
-    setStatus("🔓 Panel de administrador desbloqueado.");
-    document.getElementById('usuarioEmail').value = "";
-    document.getElementById('usuarioPass').value = "";
-  } catch (error) {
-    setStatus("❌ Usuario o contraseña inválidos.", true);
-    console.error(error.code);
+    // Buscar primero por el UID único del Auth
+    let userRef = window.doc(window.db, "usuarios", uid);
+    let userSnap = await window.getDoc(userRef);
+    
+    // Resguardo secundario: Buscar por string de correo
+    if (!userSnap.exists()) {
+      userRef = window.doc(window.db, "usuarios", email);
+      userSnap = await window.getDoc(userRef);
+    }
+    
+    return userSnap.exists() ? (userSnap.data().rol || "usuario") : "usuario";
+  } catch (err) {
+    console.error("Error obteniendo rol:", err);
+    return "usuario";
   }
 }
 
 /**
- * Desconecta la sesión activa de Firebase Auth.
+ * Renderiza el menú de hamburguesa sin textos fijos adaptándolo al rol activo
+ */
+function renderNavigationMenu(rol) {
+  const dropdown = document.getElementById("cornerDropdown");
+  const menuBtn = document.getElementById("cornerMenuBtn");
+  
+  if (!dropdown || !menuBtn) return;
+
+  // Si no hay sesión válida, esconder el icono de hamburguesa ☰
+  if (!rol) {
+    menuBtn.style.display = "none";
+    dropdown.innerHTML = "";
+    return;
+  }
+
+  menuBtn.style.display = "block"; 
+  dropdown.innerHTML = ""; 
+
+  if (rol === "admin") {
+    dropdown.innerHTML = `
+      <button type="button" id="navToAdmin" role="menuitem">⚙️ Panel Admin</button>
+      <button type="button" id="navToReport" role="menuitem">📊 Reporte Inventario</button>
+      <hr style="border: none; border-top: 1px solid var(--border); margin: 6px 0;">
+      <button type="button" id="btnLogout" role="menuitem" style="color: var(--danger);">🚪 Cerrar sesión</button>
+    `;
+    
+    document.getElementById("navToAdmin")?.addEventListener("click", () => showView("admin"));
+    document.getElementById("navToReport")?.addEventListener("click", () => showView("report"));
+  } else {
+    // Operario normal: Solo puede ver reporte de inventario y no cambia de vista
+    dropdown.innerHTML = `
+      <button type="button" id="btnLogout" role="menuitem" style="color: var(--danger);">🚪 Cerrar sesión</button>
+    `;
+  }
+
+  document.getElementById("btnLogout")?.addEventListener("click", logoutAdmin);
+}
+
+/**
+ * Valida el formulario de entrada global del sistema
+ */
+async function unlockAdminPanel() {
+  const email = document.getElementById('usuarioEmail').value.trim();
+  const pass = document.getElementById('usuarioPass').value;
+  const statusDiv = document.getElementById('status');
+
+  if (!email || !pass) {
+    if (statusDiv) statusDiv.textContent = "❌ Ingresa correo y contraseña.";
+    return;
+  }
+
+  try {
+    if (statusDiv) statusDiv.textContent = "Verificando accesos...";
+    const userCredential = await window.signInWithEmailAndPassword(window.auth, email, pass);
+    const user = userCredential.user;
+    
+    const rol = await getUserRole(user.uid, user.email);
+    state.userRole = rol;
+    state.adminUnlocked = (rol === "admin");
+
+    renderNavigationMenu(rol);
+    
+    if (rol === "admin") {
+      showView("admin"); 
+    } else {
+      showView("report"); 
+    }
+
+    document.getElementById('usuarioEmail').value = "";
+    document.getElementById('usuarioPass').value = "";
+    if (statusDiv) statusDiv.textContent = "";
+  } catch (error) {
+    if (statusDiv) statusDiv.textContent = "❌ Credenciales incorrectas.";
+    console.error(error);
+  }
+}
+
+/**
+ * Cierre de sesión seguro y reset de interfaces
  */
 async function logoutAdmin() {
   try {
     await window.signOut(window.auth);
     state.adminUnlocked = false;
-    updateAdminLockUI();
-    setStatus("🚪 Sesión cerrada correctamente.");
+    state.userRole = null;
+    
+    renderNavigationMenu(null);
+    showView("login");
   } catch (error) {
-    setStatus("❌ Error al cerrar sesión.", true);
-    console.error(error);
+    console.error("Error al cerrar sesión:", error);
   }
 }
 
@@ -203,9 +243,6 @@ async function logoutAdmin() {
  * =========================================================================
  */
 
-/**
- * Construye la fuente de datos mezclando los SKUs del inventario cargado y las reglas de Firebase.
- */
 function buildAdminSourceRows() {
   const allSKUs = new Set();
   if (state.rows && state.rows.length) {
@@ -226,9 +263,6 @@ function buildAdminSourceRows() {
   return rows.sort((a,b) => norm(a.SKU).localeCompare(norm(b.SKU)));
 }
 
-/**
- * Procesa filtros de texto y reglas sobre la lista de control, calculando la paginación activa.
- */
 function applyAdminFilter() {
   if (!state.adminUnlocked) return;
   const searchTerm = norm(document.getElementById("adminSearchInput")?.value || "");
@@ -256,18 +290,15 @@ function applyAdminFilter() {
   const filterInfo = document.getElementById("adminFilterInfo");
   if (filterInfo) {
     let text = "";
-    if (state.adminActiveFilter === "all") text = `Mostrando ${pageRows.length} de ${totalItems} SKUs (Filtro: todos)`;
-    else if (state.adminActiveFilter === "conRegla") text = `✅ Mostrando ${pageRows.length} de ${totalItems} SKUs con reglas definidas`;
-    else if (state.adminActiveFilter === "sinRegla") text = `📭 Mostrando ${pageRows.length} de ${totalItems} SKUs sin reglas`;
+    if (state.adminActiveFilter === "all") text = `Mostrando ${pageRows.length} de ${totalItems} SKUs`;
+    else if (state.adminActiveFilter === "conRegla") text = `✅ ${pageRows.length} de ${totalItems} SKUs con reglas`;
+    else if (state.adminActiveFilter === "sinRegla") text = `📭 ${pageRows.length} de ${totalItems} SKUs sin reglas`;
     filterInfo.textContent = text;
   }
 }
 
-/**
- * Lee los inputs numéricos modificados en la tabla HTML de administración y actualiza las reglas.
- */
 function saveRulesFromInputs() {
-  if (!state.adminUnlocked) { setStatus("Debes desbloquear el panel.", true); return; }
+  if (!state.adminUnlocked) return;
   const inputs = Array.from(document.querySelectorAll("#adminTable tbody input"));
   const nextRules = { ...state.adminRules };
   
@@ -290,66 +321,49 @@ function saveRulesFromInputs() {
   persistRules();
   recalculateRows();
   applyAdminFilter();
-  setStatus("✅ Reglas guardadas correctamente.");
 }
 
-/**
- * Limpia por completo la colección de reglas en memoria y en Firestore.
- */
 function clearAllRules() {
-  if (!state.adminUnlocked) { setStatus("Debes desbloquear el panel.", true); return; }
+  if (!state.adminUnlocked) return;
   if (confirm("¿Eliminar TODAS las reglas de mínimos y máximos?")) {
     state.adminRules = {};
     persistRules();
     recalculateRows();
     applyAdminFilter();
-    setStatus("🧹 Todas las reglas fueron eliminadas.");
   }
 }
 
-/**
- * Registra un nuevo código SKU en el árbol de reglas administrativas independientes.
- */
 function addNewSku() {
-  if (!state.adminUnlocked) { setStatus("Debes desbloquear el panel.", true); return; }
+  if (!state.adminUnlocked) return;
   const newSku = prompt("Ingrese el nuevo SKU (código):");
   if (!newSku || newSku.trim() === "") return;
   const skuTrim = newSku.trim();
   
   if (state.adminRules[skuTrim]) {
-    setStatus(`❌ El SKU "${skuTrim}" ya existe en las reglas.`, true);
+    alert(`El SKU "${skuTrim}" ya tiene reglas creadas.`);
     return;
-  }
-  const existingInInventory = state.rows?.some(r => r.SKU === skuTrim);
-  if (existingInInventory) {
-    setStatus(`⚠️ El SKU "${skuTrim}" ya existe en el inventario. Puedes editar sus reglas.`);
   }
   
   state.adminRules[skuTrim] = { minimo: "", maximo: "", producto: "" };
   persistRules();
   recalculateRows();
   applyAdminFilter();
-  setStatus(`✅ SKU "${skuTrim}" agregado correctamente.`);
 }
 
-/**
- * Parsea un archivo Excel externo para importar masivamente mínimos y máximos.
- */
 function importRulesExcel() {
-  if (!state.adminUnlocked) { setStatus("Debes desbloquear el panel.", true); return; }
+  if (!state.adminUnlocked) return;
   const file = document.getElementById("adminExcelInput").files[0];
-  if (!file) { setStatus("Selecciona un archivo Excel.", true); return; }
+  if (!file) return;
   
   const reader = new FileReader();
   reader.onload = function(evt) {
     try {
       const data = new Uint8Array(evt.target.result);
       const workbook = XLSX.read(data, { type: "array" });
-      const sheetName = workbook.SheetNames[0];
-      const sheet = workbook.Sheets[sheetName];
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
       
-      if (!aoa.length) { setStatus("El Excel está vacío.", true); return; }
+      if (!aoa.length) return;
       
       let headerRowIndex = 0;
       for (let i = 0; i < Math.min(20, aoa.length); i++) {
@@ -363,22 +377,20 @@ function importRulesExcel() {
       
       const header = (aoa[headerRowIndex] || []).map((h, idx) => String(h || "").trim() || `Col_${idx}`);
       const map = getColumnMap(header);
-      if (!map.sku) { setStatus("No se encontró columna SKU en el archivo.", true); return; }
+      if (!map.sku) return;
       
       let importedCount = 0;
       const skusImported = new Set();
       
       for (let i = headerRowIndex + 1; i < aoa.length; i++) {
         const rowArr = aoa[i] || [];
-        const hasContent = rowArr.some(v => String(v || "").trim() !== "");
-        if (!hasContent) continue;
+        if (!rowArr.some(v => String(v || "").trim() !== "")) continue;
         
         const row = {};
         header.forEach((name, idx) => { row[name] = rowArr[idx] !== undefined ? rowArr[idx] : ""; });
         
         const sku = String(row[map.sku] || "").trim();
-        if (!sku) continue;
-        if (skusImported.has(sku)) continue;
+        if (!sku || skusImported.has(sku)) continue;
         skusImported.add(sku);
         
         const minimo = map.minimo ? toNumOrNull(row[map.minimo]) : null;
@@ -398,11 +410,9 @@ function importRulesExcel() {
       persistRules();
       recalculateRows();
       applyAdminFilter();
-      setStatus(`✅ ¡Importación exitosa! Se configuraron ${importedCount} reglas sin duplicados.`);
       document.getElementById("adminExcelInput").value = "";
     } catch (err) { 
       console.error(err); 
-      setStatus("Error al importar el Excel.", true); 
     }
   };
   reader.readAsArrayBuffer(file);
@@ -414,43 +424,25 @@ function importRulesExcel() {
  * =========================================================================
  */
 
-/**
- * Parsea un archivo Excel de precios maestros (listaCompleta), extrae códigos, descripciones 
- * y calcula automáticamente el precio PAD con IVA (13%), guardando todo de forma persistente en Firestore.
- */
 async function importListaCompleta() {
-  if (!state.adminUnlocked) { 
-    setStatus("Debes desbloquear el panel.", true); 
-    return; 
-  }
-  
+  if (!state.adminUnlocked) return;
   const file = document.getElementById("listaCompletaInput").files[0];
-  if (!file) { 
-    setStatus("Selecciona el archivo de precios (precios.xlsm o similar).", true); 
-    return; 
-  }
+  if (!file) return;
   
-  setStatus("Procesando archivo maestro de precios...");
   const reader = new FileReader();
-  
   reader.onload = async function(evt) {
     try {
       const data = new Uint8Array(evt.target.result);
       const workbook = XLSX.read(data, { type: "array" });
       
-      // Buscar la hoja "lista completa" o similar mediante normalización de texto
       let sheetName = workbook.SheetNames.find(n => norm(n).includes("lista"));
       if (!sheetName) sheetName = workbook.SheetNames[0];
       
       const sheet = workbook.Sheets[sheetName];
       const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
       
-      if (!aoa.length) { 
-        setStatus("El archivo de precios está vacío.", true); 
-        return; 
-      }
+      if (!aoa.length) return;
       
-      // Detectar fila de encabezados (buscar heurística de "CODIGOS", "PAD", "PSM")
       let headerRowIndex = 0;
       for (let i = 0; i < Math.min(20, aoa.length); i++) {
         const row = Array.isArray(aoa[i]) ? aoa[i] : [];
@@ -461,12 +453,8 @@ async function importListaCompleta() {
         }
       }
       
-      const headerRow = (aoa[headerRowIndex] || []).map((h, idx) => {
-        const clean = String(h || "").trim();
-        return clean || `Col_${idx + 1}`;
-      });
+      const headerRow = (aoa[headerRowIndex] || []).map((h, idx) => String(h || "").trim() || `Col_${idx + 1}`);
       
-      // Detectar columnas clave de la matriz de precios
       let codigoCol = null;
       let descCol = null;
       let precioColPAD = null;
@@ -478,35 +466,28 @@ async function importListaCompleta() {
         if (hNorm.includes("pad") && hNorm.includes("sin")) precioColPAD = idx;
       });
       
-      if (codigoCol === null || precioColPAD === null) {
-        setStatus("No se encontraron columnas indispensables: CODIGOS y PAD SIN IVA. Verifica el formato.", true);
-        return;
-      }
+      if (codigoCol === null || precioColPAD === null) return;
       
-      // Inicializar y vaciar estructuras temporales de catálogo
       state.listaCompleta = [];
       state.preciosLookup = {};
       let processedCount = 0;
       
-      // Mapear filas de datos hacia el estado local
       for (let i = headerRowIndex + 1; i < aoa.length; i++) {
         const rowArr = aoa[i] || [];
-        const hasContent = rowArr.some(v => String(v || "").trim() !== "");
-        if (!hasContent) continue;
+        if (!rowArr.some(v => String(v || "").trim() !== "")) continue;
         
         const codigo = String(rowArr[codigoCol] || "").trim().toUpperCase();
         const descripcion = descCol !== null ? String(rowArr[descCol] || "").trim() : "";
         
-        // 🧮 MATEMÁTICA: Tomar el valor base de la columna "PAD SIN IVA" y sumarle el 13% de IVA
         const precioSinIva = toNum(rowArr[precioColPAD]);
-        const precioConIva = precioSinIva * 1.13; 
+        const precioConIva = precioSinIva * 1.13; // Aplicación del 13% de IVA
         
         if (!codigo) continue;
         
         const item = {
           CODIGO: codigo,
           DESCRIPCION: descripcion,
-          PRECIO: precioConIva // Costo real definitivo guardado en la base de datos
+          PRECIO: precioConIva
         };
         
         state.listaCompleta.push(item);
@@ -514,32 +495,19 @@ async function importListaCompleta() {
         processedCount++;
       }
       
-      if (processedCount === 0) {
-        setStatus("No se encontraron productos con datos válidos en el catálogo.", true);
-        return;
-      }
-
-      // 💾 PERSISTENCIA: Guardar catálogo en Firebase de inmediato
       await saveListaCompleta();
 
-      // Forzar recálculo dinámico en el reporte en pantalla si ya hay datos cargados
       if (state.rows && state.rows.length > 0) {
         recalculateRows();
         if (typeof applyFilterAndSearch === "function") applyFilterAndSearch();
       }
 
       applyAdminFilter();
-      setStatus(`✅ Precios cargados correctamente. ${processedCount} productos con costos actualizados (PAD c/IVA 13%).`);
-      
-      // Limpiar el valor del input file del DOM
       document.getElementById("listaCompletaInput").value = "";
-
     } catch (err) {
       console.error(err);
-      setStatus("Error al cargar el archivo de precios. Verifica que sea un Excel válido.", true);
     }
   };
-  
   reader.readAsArrayBuffer(file);
 }
 
@@ -549,14 +517,9 @@ async function importListaCompleta() {
  * =========================================================================
  */
 
-/**
- * Inicializa el estado estético de la aplicación basándose en las preferencias
- * guardadas en el state y configura el interruptor (toggle) en caliente.
- */
 function initDarkMode() {
   const toggleBtn = document.getElementById('darkModeToggle');
   
-  // Sincronizar el estado visual de la app con el DOM
   if (state.darkMode) {
     document.body.classList.add('dark');
     if (toggleBtn) toggleBtn.innerHTML = '☀️ Modo claro';
@@ -565,15 +528,11 @@ function initDarkMode() {
     if (toggleBtn) toggleBtn.innerHTML = '🌙 Modo oscuro';
   }
   
-  // Agregar el evento de escucha si el botón existe en el DOM activo
   if (toggleBtn) {
     toggleBtn.addEventListener('click', () => {
       document.body.classList.toggle('dark');
       state.darkMode = document.body.classList.contains('dark');
-      
-      // Sincroniza la preferencia en Firebase Firestore automáticamente
       persistSettings();
-      
       toggleBtn.innerHTML = state.darkMode ? '☀️ Modo claro' : '🌙 Modo oscuro';
     });
   }

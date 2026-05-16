@@ -1,34 +1,52 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-<title>Auxiliar de Inventario y Pedidos | Modo Oscuro + Admin</title>
-<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-<link rel="stylesheet" href="./css/style.css">
-<script src="./js/state.js"></script>
-<script src="./js/utils.js"></script>
-<script src="./js/engine.js"></script>
-<script src="./js/ui.js"></script>
-<script src="./js/app.js"></script>
-<script src="./js/admin.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+  <title>Auxiliar de Inventario y Pedidos | Tecno Bahía</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="./css/style.css">
+  
+  <script>
+    window.firebaseReady = new Promise((resolve) => {
+      window.__resolveFirebaseReady = resolve;
+    });
+  </script>
+
+  <script src="./js/state.js"></script>
+  <script src="./js/utils.js"></script>
+  <script src="./js/engine.js"></script>
+  <script src="./js/ui.js"></script>
+  <script src="./js/app.js"></script>
+  <script src="./js/admin.js"></script>
 </head>
 <body>
   <div class="corner-menu" aria-label="Menú principal">
     <button type="button" id="darkModeToggle" class="dark-mode-btn" aria-label="Cambiar tema">
       🌙 Modo oscuro
     </button>
-    <button type="button" class="menu-btn" id="cornerMenuBtn" aria-haspopup="true" aria-expanded="false">
-      <strong>☰</strong> Navegación
+    <button type="button" class="menu-btn" id="cornerMenuBtn" aria-haspopup="true" aria-expanded="false" style="display: none;">
+      <strong>☰</strong>
     </button>
-    <div class="dropdown" id="cornerDropdown" role="menu">
-      <button type="button" id="navToReport" role="menuitem">📊 Reporte de inventario</button>
-      <button type="button" id="navToAdmin" role="menuitem">⚙️ Panel Admin (mínimos/máximos)</button>
-    </div>
+    <div class="dropdown" id="cornerDropdown" role="menu"></div>
   </div>
 
   <div class="container">
-    <div id="viewReport">
+    
+    <div id="viewLogin" class="card">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="margin-bottom: 8px;">🔐 Tecno Bahía</h1>
+        <p style="color: var(--muted); margin: 0;">Control de Inventarios y Gestión de Pedidos</p>
+      </div>
+      <div class="admin-lock" style="display: flex; flex-direction: column; gap: 12px; max-width: 340px; margin: 0 auto; padding: 10px 0;">
+        <input type="email" id="usuarioEmail" placeholder="Correo electrónico" required style="width: 100%; padding: 10px; box-sizing: border-box;" />
+        <input type="password" id="usuarioPass" placeholder="Contraseña" required style="width: 100%; padding: 10px; box-sizing: border-box;" />
+        <button id="btnIngresar" class="btn-secondary" style="width: 100%; padding: 10px; font-weight: bold;">🔑 Ingresar al sistema</button>
+        <div id="status" class="status-msg" style="text-align: center;"></div>
+      </div>
+    </div>
+
+    <div id="viewReport" class="hidden">
       <div class="card">
         <h1>Auxiliar de Inventario y Pedidos</h1>
         <p>Sube el Excel de inventario — el sistema calculará el pedido y el exceso de inventario automáticamente.</p>
@@ -36,7 +54,6 @@
           <input type="file" id="fileInput" accept=".xlsx,.xls" />
           <button id="btnExport" disabled>Descargar Pedido (.xlsx)</button>
         </div>
-        <div id="status" class="status-msg"></div>
       </div>
 
       <div class="card">
@@ -64,9 +81,7 @@
         </div>
         <div style="overflow:auto;">
           <table id="resultTable">
-            <thead id="tableHeader">
-              <!-- El encabezado se genera dinámicamente según el filtro -->
-            </thead>
+            <thead id="tableHeader"></thead>
             <tbody id="tableBody"></tbody>
           </table>
         </div>
@@ -76,32 +91,25 @@
 
     <div id="viewAdmin" class="hidden">
       <div class="card">
-        <div class="view-title">
-          <h2>⚙️ Administración de reglas</h2>
-          <p style="margin:0;color:var(--muted);">Define mínimos y máximos por SKU (se aplican en el reporte principal)</p>
+        <div class="view-title" style="margin-bottom: 20px;">
+          <h2>⚙️ Panel de Administración</h2>
+          <p style="margin:0;color:var(--muted);">Define mínimos y máximos por SKU globales del sistema</p>
         </div>
 
-        <div class="admin-lock">
-          <input type="email" id="usuarioEmail" placeholder="Correo electrónico" />
-          <input type="password" id="usuarioPass" placeholder="Contraseña" />
-          <button id="btnIngresar" class="btn-secondary">🔓 Ingresar</button>
-          <span id="adminLockStatus" class="hint" style="padding:8px 10px;">🔒 Panel bloqueado</span>
-        </div>
-
-        <div id="adminContent" class="hidden">
+        <div id="adminContent">
           <div class="admin-actions" style="margin-bottom: 16px;">
             <button id="btnSaveRules" class="btn-secondary">💾 Guardar reglas</button>
             <button id="btnClearRules" class="btn-secondary">🗑️ Limpiar todas las reglas</button>
-            <button id="btnLogout" class="btn-secondary" style="background: var(--danger); color: white;">🚪 Cerrar sesión</button>
           </div>
+          
           <div class="row admin-tools">
             <input type="file" id="listaCompletaInput" accept=".xlsx,.xls,.xlsm" />
             <button id="btnImportLista" class="btn-secondary">💰 Cargar PRECIOS (archivo precios.xlsm)</button>
           </div>
           <div class="hint">
             💰 <strong>Archivo de precios</strong>: Sube el archivo de Sherwin Williams (precios.xlsm o similar).<br>
-            ✅ El sistema detecta automáticamente: <strong>CODIGOS</strong>, <strong>DESCRIPCION</strong> y <strong>PAD SIN IVA ABRIL 2026</strong>.<br>
-            📊 Se cargará el precio sin IVA para calcular los pedidos correctamente.
+            ✅ El sistema detecta automáticamente: <strong>CODIGOS</strong>, <strong>DESCRIPCION</strong> y <strong>PAD SIN IVA</strong>.<br>
+            📊 Se aplicará el +13% de IVA para registrar el costo de adquisición real.
           </div>
           <div class="hint" style="margin-top:4px; font-size:0.95em; opacity:0.9;">
             📌 Se usa automáticamente la plantilla de pedido por defecto (`PEDIDO PLANTILLA.xlsx`) para generar el pedido.
@@ -116,11 +124,11 @@
           </div>
           <div class="hint">
             📋 <strong>Archivo de reglas</strong>: Define mínimos y máximos por código.<br>
-            Columnas requeridas: <strong>SKU</strong> (código), <strong>Minimo</strong> y <strong>Maximo</strong> (opcional: Producto).<br>
-            🔁 No se permiten SKUs duplicados. Al importar, se fusionan sin duplicar.
+            Columnas requeridas: <strong>SKU</strong> (código), <strong>Minimo</strong> y <strong>Maximo</strong>.<br>
+            🔁 Al importar, los registros se fusionan sin duplicar.
           </div>
           
-          <div class="admin-filters">
+          <div class="admin-filters" style="margin-top: 20px;">
             <input type="text" id="adminSearchInput" placeholder="🔍 Buscar SKU o producto..." style="width: 250px;" />
             <div class="admin-filter-chip" data-admin-filter="all">📋 Todos</div>
             <div class="admin-filter-chip" data-admin-filter="conRegla">✅ Con reglas</div>
@@ -141,180 +149,178 @@
       </div>
     </div>
   </div>
+
   <script>
-/**
- * =========================================================================
- * 🎛️ SECCIÓN 6: MANEJO DE INTERFAZ (CHIPS, LISTENERS Y MENÚS)
- * =========================================================================
- */
-
-/**
- * Configura el comportamiento y alternancia visual de los chips de filtro del reporte principal.
- */
-function setupFilterChips() {
-  const chips = document.querySelectorAll(".filter-chip");
-  chips.forEach(chip => {
-    chip.addEventListener("click", () => {
-      const filterValue = chip.getAttribute("data-filter");
-      state.activeFilter = filterValue;
-      chips.forEach(c => c.classList.remove("active"));
-      chip.classList.add("active");
-      applyFilterAndSearch();
-    });
-  });
-  document.querySelector('.filter-chip[data-filter="all"]')?.classList.add("active");
-}
-
-/**
- * Configura la alternancia visual de los chips de filtro del panel de administración.
- */
-function setupAdminFilterChips() {
-  const chips = document.querySelectorAll(".admin-filter-chip");
-  chips.forEach(chip => {
-    chip.addEventListener("click", () => {
-      const filterValue = chip.getAttribute("data-admin-filter");
-      state.adminActiveFilter = filterValue;
-      chips.forEach(c => c.classList.remove("active"));
-      chip.classList.add("active");
-      applyAdminFilter();
-    });
-  });
-  document.querySelector('.admin-filter-chip[data-admin-filter="all"]')?.classList.add("active");
-}
-
-// 📌 DECLARACIÓN CENTRAL DE LISTENERS DEL DOM
-document.getElementById("fileInput")?.addEventListener("change", handleFile);
-document.getElementById("searchInput")?.addEventListener("input", () => applyFilterAndSearch());
-document.getElementById("btnExport")?.addEventListener("click", exportResults);
-document.getElementById("adminSearchInput")?.addEventListener("input", () => applyAdminFilter());
-document.getElementById("btnSaveRules")?.addEventListener("click", saveRulesFromInputs);
-document.getElementById("btnClearRules")?.addEventListener("click", clearAllRules);
-document.getElementById("btnIngresar")?.addEventListener("click", unlockAdminPanel);
-document.getElementById("btnImportExcel")?.addEventListener("click", importRulesExcel);
-document.getElementById("btnImportLista")?.addEventListener("click", importListaCompleta); // Dispara la carga masiva con IVA
-document.getElementById("btnAddSku")?.addEventListener("click", addNewSku);
-document.getElementById("btnLogout")?.addEventListener("click", logoutAdmin);
-
-// Atajos de teclado (Enter) en el login administrativo
-document.getElementById("usuarioEmail")?.addEventListener("keypress", (e) => { if (e.key === "Enter") unlockAdminPanel(); });
-document.getElementById("usuarioPass")?.addEventListener("keypress", (e) => { if (e.key === "Enter") unlockAdminPanel(); });
-
-/**
- * Alterna la visibilidad del menú desplegable de configuraciones del sistema.
- */
-function toggleCornerMenu(e) { 
-  e.stopPropagation(); 
-  const dd = document.getElementById("cornerDropdown"); 
-  const btn = document.getElementById("cornerMenuBtn"); 
-  const open = !dd.classList.contains("open"); 
-  
-  dd.classList.toggle("open", open); 
-  btn.setAttribute("aria-expanded", open ? "true" : "false"); 
-}
-
-function closeCornerMenu() { 
-  document.getElementById("cornerDropdown")?.classList.remove("open"); 
-}
-
-/**
- * Enrutador básico de vistas SPA (Reporte logístico vs Panel administrativo).
- */
-function showView(which) {
-  state.currentView = which;
-  persistSettings(); // Almacena la última vista visitada en Firestore
-  
-  const report = document.getElementById("viewReport");
-  const admin = document.getElementById("viewAdmin");
-  
-  if (which === "report") { 
-    report?.classList.remove("hidden"); 
-    admin?.classList.add("hidden"); 
-  } else { 
-    report?.classList.add("hidden"); 
-    admin?.classList.remove("hidden"); 
-    if(state.adminUnlocked) applyAdminFilter(); 
-  }
-  closeCornerMenu();
-}
-
-// Listeners de navegación de vistas
-document.getElementById("cornerMenuBtn")?.addEventListener("click", toggleCornerMenu);
-document.getElementById("navToReport")?.addEventListener("click", () => showView("report"));
-document.getElementById("navToAdmin")?.addEventListener("click", () => showView("admin"));
-
-// Cerrar el menú contextual si se hace click fuera de su contenedor
-document.addEventListener("click", function(e) { 
-  const wrap = document.querySelector(".corner-menu"); 
-  if(wrap && !wrap.contains(e.target)) closeCornerMenu(); 
-});
-
-/**
- * ⚡ PUNTO DE ENTRADA (ORQUESTADOR DE ARRANQUE)
- */
-async function initApp() {
-  await window.firebaseReady; // Espera activa a que el módulo de Firebase monte sus variables en el objeto global window
-  await loadRules();
-  await loadSettings();
-  await loadListaCompleta();
-  
-  if (typeof loadDefaultPedidoTemplate === "function") loadDefaultPedidoTemplate();
-  updateExportButtonState();
-  updateAdminLockUI();
-  setupFilterChips();
-  setupAdminFilterChips();
-  if (typeof initDarkMode === "function") initDarkMode();
-  showView(state.currentView);
-}
-
-// Iniciar aplicación
-initApp().catch(err => console.error("Error inicializando la aplicación:", err));
-</script>
-
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js";
-  import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
-  import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
-
-  // Configuración oficial del entorno Tecno Bahía Inventario
-  const firebaseConfig = {
-    apiKey: "AIzaSyB1gb9Q_3FfsEhES1QfliYd_SHtHz9VY5g",
-    authDomain: "tecnobahiainventario.firebaseapp.com",
-    projectId: "tecnobahiainventario",
-    storageBucket: "tecnobahiainventario.firebasestorage.app",
-    messagingSenderId: "1086497196310",
-    appId: "1:1086497196310:web:b7bbd2ccbe3bb2ad842837"
-  };
-
-  // Inicializar App global
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-  const auth = getAuth(app);
-
-  // Exposición de métodos y punteros a la ventana global (Soluciona incompatibilidades de scopes en Vanilla JS)
-  window.db = db;
-  window.setDoc = setDoc;
-  window.getDoc = getDoc;
-  window.doc = doc;
-  window.auth = auth;
-  window.signInWithEmailAndPassword = signInWithEmailAndPassword;
-  window.signOut = signOut;
-  window.onAuthStateChanged = onAuthStateChanged;
-  
-  window.firebaseReady = window.firebaseReady || Promise.resolve();
-  window.__resolveFirebaseReady?.();
-
-  // Escucha activa y reactiva del estado de autenticación (Mantener sesión iniciada)
-  window.onAuthStateChanged(window.auth, (user) => {
-    if (user) {
-      state.adminUnlocked = true;
-    } else {
-      state.adminUnlocked = false;
+    /**
+     * =========================================================================
+     * 🎛️ MANEJO DE INTERFAZ GENERAL (CHIPS, LISTENERS Y MENÚS)
+     * =========================================================================
+     */
+    function setupFilterChips() {
+      const chips = document.querySelectorAll(".filter-chip");
+      chips.forEach(chip => {
+        chip.addEventListener("click", () => {
+          const filterValue = chip.getAttribute("data-filter");
+          state.activeFilter = filterValue;
+          chips.forEach(c => c.classList.remove("active"));
+          chip.classList.add("active");
+          applyFilterAndSearch();
+        });
+      });
+      document.querySelector('.filter-chip[data-filter="all"]')?.classList.add("active");
     }
-    updateAdminLockUI();
-    if (state.adminUnlocked) applyAdminFilter();
-  });
 
-  console.log("🔥 Firebase conectado correctamente y montado en el scope global.");
-</script>
+    function setupAdminFilterChips() {
+      const chips = document.querySelectorAll(".admin-filter-chip");
+      chips.forEach(chip => {
+        chip.addEventListener("click", () => {
+          const filterValue = chip.getAttribute("data-admin-filter");
+          state.adminActiveFilter = filterValue;
+          chips.forEach(c => c.classList.remove("active"));
+          chip.classList.add("active");
+          applyAdminFilter();
+        });
+      });
+      document.querySelector('.admin-filter-chip[data-admin-filter="all"]')?.classList.add("active");
+    }
+
+    // Listeners de Inputs y Botones
+    document.getElementById("fileInput")?.addEventListener("change", handleFile);
+    document.getElementById("searchInput")?.addEventListener("input", () => applyFilterAndSearch());
+    document.getElementById("btnExport")?.addEventListener("click", exportResults);
+    document.getElementById("adminSearchInput")?.addEventListener("input", () => applyAdminFilter());
+    document.getElementById("btnSaveRules")?.addEventListener("click", saveRulesFromInputs);
+    document.getElementById("btnClearRules")?.addEventListener("click", clearAllRules);
+    document.getElementById("btnIngresar")?.addEventListener("click", unlockAdminPanel);
+    document.getElementById("btnImportExcel")?.addEventListener("click", importRulesExcel);
+    document.getElementById("btnImportLista")?.addEventListener("click", importListaCompleta); 
+    document.getElementById("btnAddSku")?.addEventListener("click", addNewSku);
+
+    document.getElementById("usuarioEmail")?.addEventListener("keypress", (e) => { if (e.key === "Enter") unlockAdminPanel(); });
+    document.getElementById("usuarioPass")?.addEventListener("keypress", (e) => { if (e.key === "Enter") unlockAdminPanel(); });
+
+    function toggleCornerMenu(e) { 
+      e.stopPropagation(); 
+      const dd = document.getElementById("cornerDropdown"); 
+      const btn = document.getElementById("cornerMenuBtn"); 
+      const open = !dd.classList.contains("open"); 
+      dd.classList.toggle("open", open); 
+      btn.setAttribute("aria-expanded", open ? "true" : "false"); 
+    }
+
+    function closeCornerMenu() { 
+      document.getElementById("cornerDropdown")?.classList.remove("open"); 
+    }
+
+    function showView(which) {
+      state.currentView = which;
+      if (which !== "login") persistSettings(); 
+      
+      const loginView = document.getElementById("viewLogin");
+      const reportView = document.getElementById("viewReport");
+      const adminView = document.getElementById("viewAdmin");
+      
+      loginView?.classList.add("hidden");
+      reportView?.classList.add("hidden");
+      adminView?.classList.add("hidden");
+      
+      if (which === "login") {
+        loginView?.classList.remove("hidden");
+      } else if (which === "report") {
+        reportView?.classList.remove("hidden");
+      } else if (which === "admin" && state.adminUnlocked) {
+        adminView?.classList.remove("hidden");
+        applyAdminFilter(); 
+      } else {
+        reportView?.classList.remove("hidden");
+      }
+      closeCornerMenu();
+    }
+
+    document.getElementById("cornerMenuBtn")?.addEventListener("click", toggleCornerMenu);
+    document.addEventListener("click", function(e) { 
+      const wrap = document.querySelector(".corner-menu"); 
+      if(wrap && !wrap.contains(e.target)) closeCornerMenu(); 
+    });
+
+    /**
+     * ⚡ ORQUESTADOR DE ARRANQUE SEGURO
+     */
+    async function initApp() {
+      await window.firebaseReady; 
+      await loadRules();
+      await loadSettings();
+      await loadListaCompleta();
+      
+      // Bloque aislado: Carga silenciosa si la plantilla no existe todavía en la DB
+      try {
+        if (typeof loadDefaultPedidoTemplate === "function") {
+          await loadDefaultPedidoTemplate();
+        }
+      } catch (e) {
+        console.warn("Aviso: Plantilla de pedidos base predeterminada no configurada en Firestore.");
+      }
+      
+      updateExportButtonState();
+      setupFilterChips();
+      setupAdminFilterChips();
+      if (typeof initDarkMode === "function") initDarkMode();
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      initApp().catch(err => console.error("Error al arrancar la app:", err));
+    });
+  </script>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js";
+    import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
+    import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyB1gb9Q_3FfsEhES1QfliYd_SHtHz9VY5g",
+      authDomain: "tecnobahiainventario.firebaseapp.com",
+      projectId: "tecnobahiainventario",
+      storageBucket: "tecnobahiainventario.firebasestorage.app",
+      messagingSenderId: "1086497196310",
+      appId: "1:1086497196310:web:b7bbd2ccbe3bb2ad842837"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+
+    window.db = db;
+    window.setDoc = setDoc;
+    window.getDoc = getDoc;
+    window.doc = doc;
+    window.auth = auth;
+    window.signInWithEmailAndPassword = signInWithEmailAndPassword;
+    window.signOut = signOut;
+    window.onAuthStateChanged = onAuthStateChanged;
+    
+    window.__resolveFirebaseReady?.();
+
+    // Gestión reactiva del estado de login persistente
+    window.onAuthStateChanged(window.auth, async (user) => {
+      if (user) {
+        const rol = await getUserRole(user.uid, user.email);
+        state.userRole = rol;
+        state.adminUnlocked = (rol === "admin");
+        renderNavigationMenu(rol);
+        
+        if (rol === "admin") {
+          showView(state.currentView === "login" ? "admin" : state.currentView);
+        } else {
+          showView("report");
+        }
+      } else {
+        state.adminUnlocked = false;
+        state.userRole = null;
+        renderNavigationMenu(null);
+        showView("login");
+      }
+    });
+  </script>
 </body>
 </html>
