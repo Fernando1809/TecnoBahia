@@ -366,39 +366,51 @@ function importRulesExcel() {
       if (!aoa.length) return;
       
       let headerRowIndex = 0;
+      let skuIdx = -1, minIdx = -1, maxIdx = -1, prodIdx = -1;
+
+      // 1. Encontrar la fila de cabecera de forma robusta
       for (let i = 0; i < Math.min(20, aoa.length); i++) {
         const row = Array.isArray(aoa[i]) ? aoa[i] : [];
         const joined = norm(row.join(" | "));
         if ((joined.includes("sku") || joined.includes("codigo")) && (joined.includes("min") || joined.includes("max"))) {
           headerRowIndex = i; 
+          
+          // Mapear los índices directamente aquí usando la fila real detectada
+          row.forEach((cell, idx) => {
+            const cNorm = norm(String(cell || ""));
+            if (cNorm.includes("sku") || cNorm.includes("codigo")) skuIdx = idx;
+            if (cNorm.includes("min")) minIdx = idx;
+            if (cNorm.includes("max")) maxIdx = idx;
+            if (cNorm.includes("producto") || cNorm.includes("descripcion")) prodIdx = idx;
+          });
           break;
         }
       }
       
-      const header = (aoa[headerRowIndex] || []).map((h, idx) => String(h || "").trim() || `Col_${idx}`);
-      const map = getColumnMap(header);
-      if (!map.sku) return;
+      // Validar que al menos encontramos la columna identificadora de ítems (SKU)
+      if (skuIdx === -1) {
+        alert("No se encontró la columna SKU o Código en el archivo.");
+        return;
+      }
       
       let importedCount = 0;
-      const skusImported = new Set();
       
+      // 2. Procesar los datos desde la fila posterior a la cabecera
       for (let i = headerRowIndex + 1; i < aoa.length; i++) {
         const rowArr = aoa[i] || [];
         if (!rowArr.some(v => String(v || "").trim() !== "")) continue;
         
-        const row = {};
-        header.forEach((name, idx) => { row[name] = rowArr[idx] !== undefined ? rowArr[idx] : ""; });
+        const sku = String(rowArr[skuIdx] || "").trim();
+        if (!sku) continue;
         
-        const sku = String(row[map.sku] || "").trim();
-        if (!sku || skusImported.has(sku)) continue;
-        skusImported.add(sku);
-        
-        const minimo = map.minimo ? toNumOrNull(row[map.minimo]) : null;
-        const maximo = map.maximo ? toNumOrNull(row[map.maximo]) : null;
-        const producto = map.producto ? String(row[map.producto] || "").trim() : "";
+        // Extraer valores de forma segura basándose en los índices encontrados
+        const minimo = minIdx !== -1 ? toNumOrNull(rowArr[minIdx]) : null;
+        const maximo = maxIdx !== -1 ? toNumOrNull(rowArr[maxIdx]) : null;
+        const producto = prodIdx !== -1 ? String(rowArr[prodIdx] || "").trim() : "";
         
         if (minimo === null && maximo === null && !producto) continue;
         
+        // Guardar las reglas en el estado global
         state.adminRules[sku] = {
           minimo: minimo === null ? "" : minimo,
           maximo: maximo === null ? "" : maximo,
@@ -411,13 +423,13 @@ function importRulesExcel() {
       recalculateRows();
       applyAdminFilter();
       document.getElementById("adminExcelInput").value = "";
+      alert(`Se importaron con éxito ${importedCount} reglas de inventario.`);
     } catch (err) { 
-      console.error(err); 
+      console.error("Error al procesar el archivo Excel de reglas:", err); 
     }
   };
   reader.readAsArrayBuffer(file);
 }
-
 /**
  * =========================================================================
  * 📈 SECCIÓN 4: INGESTA DE PRECIOS DEL CATÁLOGO MAESTRO (CON IVA)

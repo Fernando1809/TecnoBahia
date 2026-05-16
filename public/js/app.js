@@ -31,56 +31,58 @@ function handleFile(e) {
   const file = e.target.files[0];
   if (!file) return;
   
-  showStatusMessage("Procesando archivo de inventario...", "info");
+  if (typeof showStatusMessage === "function") {
+    showStatusMessage("Procesando archivo de inventario...", "info");
+  }
   
   const reader = new FileReader();
   
   reader.onload = function(evt) {
     try {
-      const data = new Uint8Array(evt.target.result);
-      const workbook = XLSX.read(data, { type: "array" });
-      const mainSheet = chooseMainSheet(workbook);
+      let workbook;
+      const fileName = file.name.toLowerCase();
       
-      // Heurística de detección geográfica (Jiquilisco / Usulután)
+      // Forzar lectura correcta si el archivo es CSV
+      if (fileName.endsWith('.csv')) {
+        const text = new TextDecoder("utf-8").decode(new Uint8Array(evt.target.result));
+        workbook = XLSX.read(text, { type: 'string' });
+      } else {
+        const data = new Uint8Array(evt.target.result);
+        workbook = XLSX.read(data, { type: 'array' });
+      }
+      
+      const sheetName = chooseMainSheet(workbook);
+      const sheet = workbook.Sheets[sheetName];
+      
+      state.rawJson = parseSheetWithAutoHeader(sheet);
+      
+      if (!state.rawJson || state.rawJson.length === 0) {
+        if (typeof showStatusMessage === "function") showStatusMessage("No se encontraron filas de datos.", "error");
+        return;
+      }
+      
       state.inventoryOrigin = detectInventoryOrigin(workbook, file.name);
-      const originText = state.inventoryOrigin ? ` Origen: ${state.inventoryOrigin}.` : " Origen: desconocido.";
       
-      const json = parseSheetWithAutoHeader(workbook.Sheets[mainSheet]);
-      if (!json.length) { 
-        showStatusMessage("La hoja está vacía.", "error");
-        return; 
+      recalculateRows();
+      
+      if (typeof switchView === "function") {
+        switchView(state.currentView || "report");
+      } else if (typeof renderTableDynamic === "function") {
+        renderTableDynamic(state.rows, state.activeFilter || "all");
       }
       
-      const headers = Object.keys(json[0]);
-      const map = getColumnMap(headers);
-      if (!map.sku || !map.inventario) { 
-        showStatusMessage("Faltan columnas esenciales: SKU o Inventario/Existencia", "error");
-        return; 
+      if (typeof showStatusMessage === "function") {
+        showStatusMessage(`✅ Inventario cargado con éxito.`, "success");
       }
       
-      state.rawJson = json;
-      state.columnMap = map;
-      
-      // 🔄 Ejecuta el motor de reabastecimiento nativo de tu proyecto (engine.js)
-      if (typeof recalculateRows === "function") {
-        recalculateRows();
-      }
-      
-      if (typeof updateExportButtonState === "function") updateExportButtonState();
-      
-      // Mensaje de éxito final estructurado
-      const totalRegistros = state.rows ? state.rows.length : json.length;
-      const msgExito = `✅ Inventario cargado. Hoja: "${mainSheet}".${originText} Registros: ${totalRegistros}.`;
-      
-      showStatusMessage(msgExito, "success");
-    } catch (err) { 
-      console.error(err); 
-      showStatusMessage("Error al leer el archivo de inventario.", "error");
+    } catch (err) {
+      console.error("Error crítico:", err);
+      if (typeof showStatusMessage === "function") showStatusMessage("Error al procesar el archivo.", "error");
     }
   };
+  
   reader.readAsArrayBuffer(file);
 }
-
 /**
  * Exporta los resultados filtrando únicamente productos que requieren reorden (PedidoSugerido > 0).
  * Limpia celdas viejas, escribe metadatos (fecha, origen) y escribe fórmulas evaluables en Excel.

@@ -1,8 +1,7 @@
 // js/engine.js
-
 /**
  * Escanea dinámicamente las primeras 20 filas para encontrar la cabecera real del Excel.
- * Ignora filas vacías, títulos superiores o logos, y mapea las columnas de datos.
+ * Sincronizado para identificar "Código", "Nombre" y "Existencia" con sus mayúsculas y tildes exactas.
  * @param {Object} sheet - Objeto de la hoja de cálculo de SheetJS.
  * @returns {Array<Object>} Un arreglo de objetos mapeados por el nombre de su columna.
  */
@@ -10,132 +9,148 @@ function parseSheetWithAutoHeader(sheet) {
   const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
   if (!aoa.length) return [];
   
-  let headerRowIndex = 0;
+  let headerRowIndex = -1;
   
-  // Buscar heurísticamente la fila de cabeceras (máximo fila 20)
+  // Escanear las filas superiores para encontrar el renglón de las columnas
   for (let i = 0; i < Math.min(20, aoa.length); i++) {
     const row = Array.isArray(aoa[i]) ? aoa[i] : [];
-    const joined = norm(row.join(" | "));
-    const looksLikeHeader = (joined.includes("codigo") || joined.includes("sku")) &&
-      (joined.includes("existencia") || joined.includes("inventario") || joined.includes("stock"));
+    const joined = row.join(" | ");
     
-    if (looksLikeHeader) { 
+    // Coincidencia exacta con la estructura de tu archivo de Tecno Bahía
+    const hasSKU = joined.includes("Código") || joined.includes("codigo") || joined.includes("SKU");
+    const hasInventario = joined.includes("Existencia") || joined.includes("existencia") || joined.includes("Inventario");
+    
+    if (hasSKU && hasInventario) { 
       headerRowIndex = i; 
       break; 
     }
   }
   
-  // Normalizar nombres de cabeceras o asignar genéricos si vienen vacíos
-  const headerRow = (aoa[headerRowIndex] || []).map((h, idx) => {
-    const clean = String(h || "").trim();
-    return clean || `Columna_${idx + 1}`;
+  // Salvavidas estricto para tu reporte: si no se detectó por texto, forzar fila índice 4
+  if (headerRowIndex === -1) {
+    headerRowIndex = aoa.length > 4 ? 4 : 0;
+  }
+  
+  const headerRow = aoa[headerRowIndex] || [];
+  const finalMap = {};
+  
+  headerRow.forEach((colName, idx) => {
+    const nameStr = String(colName || "").trim();
+    
+    if (nameStr === "Código" || nameStr === "codigo" || nameStr === "SKU") {
+      finalMap.SKU = idx;
+    } else if (nameStr === "Nombre" || nameStr.includes("descripcion") || nameStr === "Producto") {
+      finalMap.Producto = idx;
+    } else if (nameStr === "Existencia" || nameStr === "inventario" || nameStr === "Cantidad") {
+      finalMap.Inventario = idx;
+    } else if (nameStr.includes("Costo") || nameStr.includes("precio") || nameStr.includes("Consumo")) {
+      finalMap.ConsumoMensual = idx;
+    }
   });
   
-  const rows = [];
-  // Procesar filas de datos hacia abajo
-  for (let i = headerRowIndex + 1; i < aoa.length; i++) {
-    const dataRow = aoa[i] || [];
-    if (!dataRow.length) continue;
-    
-    const hasContent = dataRow.some(v => String(v || "").trim() !== "");
-    if (!hasContent) continue;
-    
-    const obj = {};
-    headerRow.forEach((h, idx) => { 
-      obj[h] = dataRow[idx] !== undefined ? dataRow[idx] : ""; 
-    });
-    rows.push(obj);
-  }
-  return rows;
+  // Garantizar asignación de seguridad de índices por descarte
+  if (finalMap.SKU === undefined) finalMap.SKU = 0; 
+  if (finalMap.Producto === undefined) finalMap.Producto = 2; // Columna 2 es "Nombre" en tu archivo
+  if (finalMap.Inventario === undefined) finalMap.Inventario = 12; // Columna 12 es "Existencia" en tu archivo
+  if (finalMap.ConsumoMensual === undefined) finalMap.ConsumoMensual = -1;
+  
+  state.columnMap = finalMap;
+  return aoa.slice(headerRowIndex + 1);
 }
-
 /**
- * Aplica el motor de reglas (mínimos, máximos, prioridades de bases de datos internas/archivo)
- * para calcular el pedido sugerido, excesos y estado de inventario para una sola fila.
+ * Calcula el estado de una fila consolidada con reglas de administración y precios base.
  */
-function computeRow(row, map) {
-  const sku = String(row[map.sku] || "").trim();
-  const productoArchivo = String(row[map.producto] || "").trim();
-  const inventario = toNum(row[map.inventario]);
+function computeRow(sku, producto, inventario, map) {
+  // Cargar reglas de límites
+  const regla = state.adminRules[sku] || {};
+  const hasMin = (regla.minimo !== undefined && regla.minimo !== "");
+  const hasMax = (regla.maximo !== undefined && regla.maximo !== "");
   
-  // Prioridad 1: Reglas administrativas centralizadas en Firebase/State
-  const adminRule = state.adminRules ? (state.adminRules[sku] || null) : null;
-  const adminMin = adminRule ? toNumOrNull(adminRule.minimo) : null;
-  const adminMax = adminRule ? toNumOrNull(adminRule.maximo) : null;
-  const productoAdmin = adminRule ? String(adminRule.producto || "").trim() : "";
-  
-  const producto = productoArchivo || productoAdmin;
-  
-  // Prioridad 2: Buscar reglas locales en el propio archivo cargado si existen
-  const tieneMin = map.minimo && row[map.minimo] !== undefined && String(row[map.minimo]).trim() !== "";
-  const tieneMax = map.maximo && row[map.maximo] !== undefined && String(row[map.maximo]).trim() !== "";
-  const minimoArchivo = tieneMin ? toNum(row[map.minimo]) : 0;
-  const maximoArchivo = tieneMax ? toNum(row[map.maximo]) : 0;
-  
-  // Fusión lógica: Mínimo/Máximo administrativo manda sobre el del archivo
-  const minimo = adminMin !== null ? adminMin : minimoArchivo;
-  const maximo = adminMax !== null ? adminMax : maximoArchivo;
-  const consumoMensual = map.consumo ? toNum(row[map.consumo]) : 0;
-  
-  // Buscar Costo Unitario en archivo, si no, usar catálogo maestro cruzado en state
-  const tienePrecio = map.precio && row[map.precio] !== undefined && String(row[map.precio]).trim() !== "";
-  const precioArchivo = tienePrecio ? toNum(row[map.precio]) : null;
-  
-  const lookupKey = sku.toUpperCase();
-  const costoUnitario = precioArchivo !== null ? precioArchivo : (state.preciosLookup ? (state.preciosLookup[lookupKey] || null) : null);
-  
-  const hasMin = adminMin !== null || tieneMin;
-  const hasMax = adminMax !== null || tieneMax;
-  
-  // 📐 Algoritmo de Reabastecimiento (Fórmula de Pedido Sugerido)
+  const minimo = hasMin ? Number(regla.minimo) : 0;
+  const maximo = hasMax ? Number(regla.maximo) : 0;
+
+  // Búsqueda en el maestro de precios
+  const precioCatalogoMaster = state.preciosLookup[sku] !== undefined ? state.preciosLookup[sku] : null;
+
+  // Cálculo del pedido sugerido
   let pedidoSugerido = 0;
-  if (hasMin && inventario <= minimo) {
-    if (hasMax && maximo > 0) {
-      pedidoSugerido = Math.max(0, Math.ceil(maximo - inventario)); // Llenar hasta el tope (Máximo)
-    } else {
-      pedidoSugerido = Math.max(0, Math.ceil(minimo - inventario)); // Recuperar stock crítico hasta el Mínimo
+  if (hasMin && hasMax) {
+    if (inventario < minimo) {
+      pedidoSugerido = maximo - inventario;
+      if (pedidoSugerido < 0) pedidoSugerido = 0;
     }
   }
-  
-  const exceso = hasMax ? Math.max(0, Math.ceil(inventario - maximo)) : 0;
-  const costoTotal = (costoUnitario !== null ? pedidoSugerido * costoUnitario : "");
-  
-  // Clasificación de Estados
+
+  const exceso = (hasMax && inventario > maximo) ? (inventario - maximo) : 0;
+
+  let costoUnitarioFinal = null;
+  let costoTotalFinal = null;
+
+  if (precioCatalogoMaster !== null && !isNaN(precioCatalogoMaster) && precioCatalogoMaster > 0) {
+    costoUnitarioFinal = Number(precioCatalogoMaster);
+    costoTotalFinal = pedidoSugerido * costoUnitarioFinal;
+  } else {
+    costoUnitarioFinal = null;
+    costoTotalFinal = null;
+  }
+
   let estado = "SIN REGLAS";
   if (hasMin || hasMax) {
     if (pedidoSugerido > 0) estado = "PEDIR";
     else if (exceso > 0) estado = "EXCESO";
     else estado = "OK";
   }
-  
+
   return {
     SKU: sku,
     Producto: producto,
     Inventario: inventario,
-    CostoUnitario: costoUnitario !== null ? costoUnitario : "",
+    CostoUnitario: costoUnitarioFinal, 
     Minimo: hasMin ? minimo : "",
     Maximo: hasMax ? maximo : "",
-    ConsumoMensual: consumoMensual,
+    ConsumoMensual: 0,
     PedidoSugerido: pedidoSugerido,
-    CostoTotal: costoTotal,
+    CostoTotal: costoTotalFinal,       
     Exceso: exceso,
     Estado: estado
   };
 }
 
 /**
- * Gatillo principal de recalculación. Corre la matriz completa de datos, actualiza las
- * métricas generales y refresca las vistas aplicando filtros activos.
+ * Agrupa y consolida las existencias de SKUs duplicados antes de procesarlos.
+ * Evita que la interfaz colapse o se quede en blanco.
  */
 function recalculateRows() {
   if (!state.rawJson || !state.rawJson.length || !state.columnMap) return;
   
-  // Procesa y filtra filas sin SKU válido
-  state.rows = state.rawJson.map(r => computeRow(r, state.columnMap)).filter(r => r.SKU);
+  const map = state.columnMap;
+  const agrupar = {};
+
+  // Primer paso: Consolidar duplicados sumando las existencias
+  state.rawJson.forEach(r => {
+    const sku = String(r[map.SKU] || '').trim();
+    if (!sku || sku === "Código" || sku.includes("---")) return; // Ignorar basura o cabeceras repetidas
+
+    const producto = String(r[map.Producto] || '').trim();
+    const inventario = toNumOrNull(r[map.Inventario]) || 0;
+
+    if (!agrupar[sku]) {
+      agrupar[sku] = {
+        sku: sku,
+        producto: producto,
+        inventario: 0
+      };
+    }
+    agrupar[sku].inventario += inventario;
+  });
+
+  // Segundo paso: Calcular las reglas sobre los datos ya limpios y unificados
+  state.rows = Object.values(agrupar).map(item => {
+    return computeRow(item.sku, item.producto, item.inventario, map);
+  });
   
   updateMetrics(state.rows);
   
-  // Nota: Asegúrate de que applyFilterAndSearch esté definido en tu controlador de renderizado de tablas
   if (typeof applyFilterAndSearch === "function") {
     applyFilterAndSearch();
   }
@@ -148,16 +163,24 @@ function updateMetrics(rows) {
   const total = rows.length;
   const conPedido = rows.filter(r => r.PedidoSugerido > 0).length;
   const conExceso = rows.filter(r => r.Exceso > 0).length;
-  const totalPedido = rows.reduce((acc, r) => acc + r.PedidoSugerido, 0);
   
-  // Elementos del DOM (Usa las funciones utils.js sanitizadas/formateadas)
+  const totalPedido = rows.reduce((acc, r) => {
+    return acc + (r.CostoTotal !== null && !isNaN(r.CostoTotal) ? r.CostoTotal : 0);
+  }, 0);
+  
   const elTotal = document.getElementById("mTotal");
   const elPedido = document.getElementById("mPedido");
   const elExceso = document.getElementById("mExceso");
   const elCantPedido = document.getElementById("mCantPedido");
   
-  if (elTotal) elTotal.innerText = fmt(total);
-  if (elPedido) elPedido.innerHTML = `${fmt(conPedido)} <span style="font-size:11px;">📦</span>`;
-  if (elExceso) elExceso.innerHTML = `${fmt(conExceso)} <span style="font-size:11px;">⚠️</span>`;
-  if (elCantPedido) elCantPedido.innerText = fmt(totalPedido);
+  if (elTotal) elTotal.textContent = total;
+  if (elPedido) elPedido.textContent = conPedido;
+  if (elExceso) elExceso.textContent = conExceso;
+  
+  if (elCantPedido) {
+    elCantPedido.textContent = "$" + totalPedido.toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  }
 }
