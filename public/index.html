@@ -272,7 +272,7 @@
     });
   </script>
 
-  <script type="module">
+<script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js";
     import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
     import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
@@ -319,8 +319,16 @@
         state.userRole = null;
         renderNavigationMenu(null);
         showView("login");
+
+        // 🧼 LIMPIEZA AUTOMÁTICA AL CERRAR SESIÓN:
+        // Borra e inhabilita el mensaje verde de Tecno Bahía inmediatamente.
+        const statusEl = document.getElementById("status");
+        if (statusEl) {
+          statusEl.textContent = "";
+          statusEl.innerHTML = "";
+          statusEl.style.display = "none";
+        }
       }
     });
-  </script>
-</body>
+  </script></body>
 </html>
