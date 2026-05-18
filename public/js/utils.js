@@ -1,38 +1,9 @@
 // js/utils.js
 
-/**
- * Carga la plantilla de Excel por defecto en formato Base64 en el estado global.
- * @returns {boolean} True si se cargó correctamente, False de lo contrario.
- */
-async function loadDefaultPedidoTemplate() {
-  try {
-    const templateData = await firestoreGetDocData("pedidoTemplate");
-    if (templateData && templateData.pedidoTemplateBase64) {
-      state.pedidoTemplateBase64 = templateData.pedidoTemplateBase64;
-      state.pedidoTemplateLoaded = true;
-      state.pedidoTemplateName = templateData.pedidoTemplateName || "Plantilla Base";
-      if (typeof updateExportButtonState === "function") {
-        updateExportButtonState();
-      }
-    } else {
-      console.warn("Aviso: No hay una plantilla guardada en Firestore aún.");
-    }
-  } catch (e) {
-    // Se cambia el mensaje en pantalla por un aviso silencioso en la consola de desarrollo (F12)
-    console.warn("Aviso: La plantilla predeterminada no se ha configurado en la base de datos.", e);
-  }
-}
-
-/**
- * Normaliza un string: quita espacios, convierte a minúsculas y elimina acentos/diacríticos.
- */
 function norm(v) {
   return String(v || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
-/**
- * Convierte un valor de texto (incluso con formatos de moneda como '$' o puntos de millares) a tipo numérico.
- */
 function toNum(v) {
   if (typeof v === "number") return isFinite(v) ? v : 0;
   const cleaned = String(v || "")
@@ -44,9 +15,6 @@ function toNum(v) {
   return isFinite(n) ? n : 0;
 }
 
-/**
- * Convierte un valor a número, o devuelve null si el campo está vacío.
- */
 function toNumOrNull(v) {
   const s = String(v ?? "").trim();
   if (s === "") return null;
@@ -54,9 +22,6 @@ function toNumOrNull(v) {
   return isFinite(n) ? n : null;
 }
 
-/**
- * Escapa caracteres HTML especiales para prevenir vulnerabilidades de XSS al renderizar contenido dinámico.
- */
 function escapeHtml(str) {
   return String(str || "")
     .replace(/&/g, "&amp;")
@@ -66,16 +31,10 @@ function escapeHtml(str) {
     .replace(/'/g, "&#039;");
 }
 
-/**
- * Formatea un número según la configuración regional es-MX (Máximo 2 decimales).
- */
 function fmt(n) {
   return Number(n || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 });
 }
 
-/**
- * Despliega una notificación flotante estilo Toast en la pantalla.
- */
 function mostrarNotificacion(mensaje, esError = false) {
   const existingToast = document.querySelector('.toast-notification');
   if (existingToast) existingToast.remove();
@@ -85,13 +44,9 @@ function mostrarNotificacion(mensaje, esError = false) {
   toast.textContent = mensaje;
   toast.style.backgroundColor = esError ? '#dc2626' : '#10b981';
   document.body.appendChild(toast);
-  
   setTimeout(() => toast.remove(), 3000);
 }
 
-/**
- * Actualiza la barra de estado principal y lanza la notificación correspondiente.
- */
 function setStatus(msg, isError = false) {
   const el = document.getElementById("status");
   if (el) {
@@ -102,32 +57,6 @@ function setStatus(msg, isError = false) {
   else if (isError) mostrarNotificacion(msg, true);
 }
 
-/**
- * Mapea de forma inteligente las columnas de un archivo importado basándose en alias lingüísticos habituales.
- */
-function getColumnMap(headers) {
-  const aliases = {
-    sku: ["sku", "codigo", "cod", "id", "clave", "código"],
-    producto: ["producto", "descripcion", "nombre", "item", "articulo"],
-    inventario: ["inventario", "stock", "existencia", "existencias", "disponible", "on hand"],
-    precio: ["precio unitario", "costo unitario", "precio", "price", "unitario", "costo"],
-    minimo: ["minimo", "min", "stock minimo", "punto de reorden", "mínimo"],
-    maximo: ["maximo", "max", "stock maximo", "tope", "máximo"],
-    consumo: ["consumo mensual", "venta mensual", "promedio mensual", "rotacion", "demanda mensual"]
-  };
-  const mapped = {};
-  const hNorm = headers.map(h => ({ raw: h, n: norm(h) }));
-  
-  Object.keys(aliases).forEach(key => {
-    const found = hNorm.find(h => aliases[key].some(a => h.n.includes(a)));
-    mapped[key] = found ? found.raw : null;
-  });
-  return mapped;
-}
-
-/**
- * Selecciona la hoja principal de inventario dentro del libro de trabajo de forma automatizada.
- */
 function chooseMainSheet(workbook) {
   const preferred = workbook.SheetNames.find(n => {
     const low = n.toLowerCase();
@@ -136,13 +65,9 @@ function chooseMainSheet(workbook) {
   return preferred || workbook.SheetNames[0];
 }
 
-/**
- * Detecta de forma heurística el origen del inventario (Jiquilisco o Usulután) buscando en el nombre del archivo,
- * en los nombres de las pestañas o analizando las primeras 10 filas de datos.
- */
 function detectInventoryOrigin(workbook, fileName) {
   const fileLower = String(fileName || "").toLowerCase();
-  if (fileLower.includes("jiquilisco")) return "Jiquilisco"; // Corregido typo menor detectado en la entrada
+  if (fileLower.includes("jiquilisco")) return "Jiquilisco";
   if (fileLower.includes("usulutan") || fileLower.includes("usulután")) return "Usulután";
 
   for (const sheetName of workbook.SheetNames) {
@@ -150,7 +75,6 @@ function detectInventoryOrigin(workbook, fileName) {
     if (key.includes("jiquilisco")) return "Jiquilisco";
     if (key.includes("usulutan") || key.includes("usulután")) return "Usulután";
     
-    // Análisis interno de celdas de la hoja
     const aoa = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: "" });
     for (let i = 0; i < Math.min(10, aoa.length); i++) {
       const row = Array.isArray(aoa[i]) ? aoa[i] : [];
@@ -160,4 +84,20 @@ function detectInventoryOrigin(workbook, fileName) {
     }
   }
   return null;
+}
+/**
+ * Formatea una fecha a string DD-MM-YYYY
+ */
+function formatDateToFileName(date) {
+  const d = String(date.getDate()).padStart(2, '0');
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const y = date.getFullYear();
+  return `${d}-${m}-${y}`;
+}
+
+/**
+ * Limpia un string para usarlo en nombre de archivo
+ */
+function sanitizeFileName(str) {
+  return String(str || "").replace(/[\\/:*?"<>|]/g, '').trim();
 }

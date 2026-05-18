@@ -1,10 +1,118 @@
 // js/admin.js
 
-/**
- * =========================================================================
- * 🔥 SECCIÓN 1: PERSISTENCIA Y CONEXIÓN CON FIREBASE FIRESTORE
- * =========================================================================
- */
+// ============================================================
+// VARIABLES DE SEGUIMIENTO
+// ============================================================
+
+let preciosLastUpdate = null;
+let preciosFileName = null;
+let reglasLastUpdate = null;
+let reglasFileName = null;
+
+// ============================================================
+// SECCIÓN 1: PERSISTENCIA
+// ============================================================
+
+function loadAllSettings() {
+  try {
+    const savedDarkMode = localStorage.getItem('tecnobahia_darkmode');
+    const savedView = localStorage.getItem('tecnobahia_currentview');
+    
+    if (savedDarkMode !== null) {
+      state.darkMode = savedDarkMode === 'true';
+    }
+    
+    if (savedView !== null && (savedView === 'admin' || savedView === 'report')) {
+      state.currentView = savedView;
+    }
+    
+    if (state.darkMode) {
+      document.body.classList.add('dark');
+    } else {
+      document.body.classList.remove('dark');
+    }
+    
+    console.log("📦 Cargado desde localStorage - Modo oscuro:", state.darkMode, "Vista:", state.currentView);
+    return state.currentView;
+  } catch(e) {
+    console.error("Error cargando settings:", e);
+    return "report";
+  }
+}
+
+function saveAllSettings() {
+  try {
+    localStorage.setItem('tecnobahia_darkmode', state.darkMode);
+    localStorage.setItem('tecnobahia_currentview', state.currentView);
+    console.log("💾 Guardado en localStorage - Modo oscuro:", state.darkMode, "Vista:", state.currentView);
+    
+    const toggleBtn = document.getElementById('darkModeToggle');
+    if (toggleBtn) {
+      toggleBtn.textContent = state.darkMode ? '☀️ Modo claro' : '🌙 Modo oscuro';
+    }
+  } catch(e) {
+    console.error("Error guardando settings:", e);
+  }
+}
+
+async function syncToFirestore() {
+  try {
+    await firestoreSetDocData("settings", {
+      currentView: state.currentView,
+      darkMode: state.darkMode === true
+    });
+  } catch(e) {
+    console.warn("No se pudo sincronizar con Firestore:", e);
+  }
+}
+
+async function loadSettings() {
+  // Primero cargar desde localStorage
+  const savedDarkMode = localStorage.getItem('tecnobahia_darkmode');
+  const savedView = localStorage.getItem('tecnobahia_currentview');
+  
+  if (savedDarkMode !== null) {
+    state.darkMode = savedDarkMode === 'true';
+  }
+  if (savedView !== null && (savedView === 'admin' || savedView === 'report')) {
+    state.currentView = savedView;
+  }
+  
+  if (state.darkMode) {
+    document.body.classList.add('dark');
+    const toggleBtn = document.getElementById('darkModeToggle');
+    if (toggleBtn) toggleBtn.textContent = '☀️ Modo claro';
+  } else {
+    document.body.classList.remove('dark');
+    const toggleBtn = document.getElementById('darkModeToggle');
+    if (toggleBtn) toggleBtn.textContent = '🌙 Modo oscuro';
+  }
+  
+  console.log("📦 Modo oscuro cargado:", state.darkMode, "Vista:", state.currentView);
+  
+  try {
+    const data = await firestoreGetDocData("settings");
+    if (data.darkMode !== undefined) state.darkMode = data.darkMode === true;
+    if (data.currentView) state.currentView = data.currentView;
+    
+    if (state.darkMode) {
+      document.body.classList.add('dark');
+    } else {
+      document.body.classList.remove('dark');
+    }
+    
+    saveAllSettings();
+  } catch(err) {
+    console.error("Error sincronizando con Firestore:", err);
+  }
+  
+  return state.currentView;
+}
+
+async function persistSettings() {
+  saveAllSettings();
+  await syncToFirestore();
+}
 
 function getFirestoreDocRef(name) {
   if (!window.db || !window.doc) throw new Error("Firestore no está inicializado");
@@ -33,109 +141,72 @@ async function firestoreSetDocData(name, data) {
   }
 }
 
-async function loadRules() {
-  const data = await firestoreGetDocData("adminRules");
-  state.adminRules = data.adminRules || {};
-}
+// ============================================================
+// FUNCIONES DE DISPLAY DE ARCHIVOS CARGADOS
+// ============================================================
 
-async function loadListaCompleta() {
-  try {
-    const data = await firestoreGetDocData("listaCompleta");
-    state.listaCompleta = data.listaCompleta || [];
-    state.preciosLookup = data.preciosLookup || {};
-
-    const templateData = await firestoreGetDocData("pedidoTemplate");
-    state.pedidoTemplateBase64 = templateData.pedidoTemplateBase64 || null;
-    state.pedidoTemplateLoaded = !!state.pedidoTemplateBase64;
-    state.pedidoTemplateName = templateData.pedidoTemplateName || null;
-  } catch (e) {
-    state.listaCompleta = [];
-    state.preciosLookup = {};
-    state.pedidoTemplateBase64 = null;
-    state.pedidoTemplateLoaded = false;
-    state.pedidoTemplateName = null;
-  }
-}
-
-async function saveListaCompleta() {
-  try {
-    await firestoreSetDocData("listaCompleta", {
-      listaCompleta: state.listaCompleta,
-      preciosLookup: state.preciosLookup
-    });
-  } catch (e) {
-    console.error("Error guardando precios:", e);
-  }
-}
-
-async function savePedidoTemplate() {
-  try {
-    if (state.pedidoTemplateBase64) {
-      await firestoreSetDocData("pedidoTemplate", {
-        pedidoTemplateBase64: state.pedidoTemplateBase64,
-        pedidoTemplateName: state.pedidoTemplateName || null
+function updatePreciosStatusDisplay(count) {
+  const preciosInfo = document.getElementById("preciosInfo");
+  if (preciosInfo) {
+    if (preciosLastUpdate && preciosFileName) {
+      const fechaFormateada = preciosLastUpdate.toLocaleString('es-ES', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
       });
+      preciosInfo.innerHTML = `<strong>${escapeHtml(preciosFileName)}</strong><br>📅 ${fechaFormateada}<br>📊 ${count} productos cargados`;
+      preciosInfo.style.color = "var(--ok)";
+    } else if (count > 0) {
+      preciosInfo.innerHTML = `<strong>Precios cargados</strong><br>📊 ${count} productos cargados`;
+      preciosInfo.style.color = "var(--ok)";
+    } else {
+      preciosInfo.innerHTML = "No hay precios cargados";
+      preciosInfo.style.color = "var(--warning)";
     }
-  } catch (e) {
-    console.error("Error guardando plantilla:", e);
   }
 }
 
-function getPedidoWorkbook() {
-  if (!state.pedidoTemplateBase64) return null;
-  try {
-    return XLSX.read(state.pedidoTemplateBase64, { type: "base64", cellDates: true });
-  } catch (e) {
-    console.error("Error leyendo plantilla PEDIDO:", e);
-    return null;
+function updateReglasStatusDisplay() {
+  const reglasInfo = document.getElementById("reglasInfo");
+  if (reglasInfo) {
+    const reglasCountTotal = Object.keys(state.adminRules).length;
+    if (reglasLastUpdate && reglasFileName && reglasCountTotal > 0) {
+      const fechaFormateada = reglasLastUpdate.toLocaleString('es-ES', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+      reglasInfo.innerHTML = `<strong>${escapeHtml(reglasFileName)}</strong><br>📅 ${fechaFormateada}<br>📊 ${reglasCountTotal} SKUs con reglas`;
+      reglasInfo.style.color = "var(--ok)";
+    } else if (reglasCountTotal > 0) {
+      reglasInfo.innerHTML = `<strong>Reglas KOLO cargadas</strong><br>📊 ${reglasCountTotal} SKUs con reglas`;
+      reglasInfo.style.color = "var(--ok)";
+    } else {
+      reglasInfo.innerHTML = "No hay reglas cargadas";
+      reglasInfo.style.color = "var(--warning)";
+    }
   }
 }
 
-function updateExportButtonState() {
-  const btn = document.getElementById("btnExport");
-  const enabled = state.rows && state.rows.length > 0 && state.pedidoTemplateLoaded;
-  if (btn) btn.disabled = !enabled;
-}
+// ============================================================
+// SECCIÓN 2: AUTENTICACIÓN
+// ============================================================
 
-async function persistRules() { 
-  await firestoreSetDocData("adminRules", { adminRules: state.adminRules }); 
-}
-
-async function loadSettings() {
-  const data = await firestoreGetDocData("settings");
-  state.currentView = data.currentView || "report";
-  state.darkMode = data.darkMode || false;
-}
-
-async function persistSettings() {
-  await firestoreSetDocData("settings", {
-    currentView: state.currentView,
-    darkMode: state.darkMode
-  });
-}
-
-/**
- * =========================================================================
- * 🔐 SECCIÓN 2: AUTENTICACIÓN, ROLES Y SEGURIDAD
- * =========================================================================
- */
-
-/**
- * Consulta el rol del usuario en la colección central "usuarios" de Firestore
- */
 async function getUserRole(uid, email) {
   if (!window.db || !window.getDoc) return "usuario";
   try {
-    // Buscar primero por el UID único del Auth
     let userRef = window.doc(window.db, "usuarios", uid);
     let userSnap = await window.getDoc(userRef);
-    
-    // Resguardo secundario: Buscar por string de correo
     if (!userSnap.exists()) {
       userRef = window.doc(window.db, "usuarios", email);
       userSnap = await window.getDoc(userRef);
     }
-    
     return userSnap.exists() ? (userSnap.data().rol || "usuario") : "usuario";
   } catch (err) {
     console.error("Error obteniendo rol:", err);
@@ -143,16 +214,12 @@ async function getUserRole(uid, email) {
   }
 }
 
-/**
- * Renderiza el menú de hamburguesa sin textos fijos adaptándolo al rol activo
- */
 function renderNavigationMenu(rol) {
   const dropdown = document.getElementById("cornerDropdown");
   const menuBtn = document.getElementById("cornerMenuBtn");
   
   if (!dropdown || !menuBtn) return;
 
-  // Si no hay sesión válida, esconder el icono de hamburguesa ☰
   if (!rol) {
     menuBtn.style.display = "none";
     dropdown.innerHTML = "";
@@ -170,10 +237,17 @@ function renderNavigationMenu(rol) {
       <button type="button" id="btnLogout" role="menuitem" style="color: var(--danger);">🚪 Cerrar sesión</button>
     `;
     
-    document.getElementById("navToAdmin")?.addEventListener("click", () => showView("admin"));
-    document.getElementById("navToReport")?.addEventListener("click", () => showView("report"));
+    document.getElementById("navToAdmin")?.addEventListener("click", () => {
+      state.currentView = "admin";
+      persistSettings();
+      showView("admin");
+    });
+    document.getElementById("navToReport")?.addEventListener("click", () => {
+      state.currentView = "report";
+      persistSettings();
+      showView("report");
+    });
   } else {
-    // Operario normal: Solo puede ver reporte de inventario y no cambia de vista
     dropdown.innerHTML = `
       <button type="button" id="btnLogout" role="menuitem" style="color: var(--danger);">🚪 Cerrar sesión</button>
     `;
@@ -182,9 +256,6 @@ function renderNavigationMenu(rol) {
   document.getElementById("btnLogout")?.addEventListener("click", logoutAdmin);
 }
 
-/**
- * Valida el formulario de entrada global del sistema
- */
 async function unlockAdminPanel() {
   const email = document.getElementById('usuarioEmail').value.trim();
   const pass = document.getElementById('usuarioPass').value;
@@ -221,15 +292,11 @@ async function unlockAdminPanel() {
   }
 }
 
-/**
- * Cierre de sesión seguro y reset de interfaces
- */
 async function logoutAdmin() {
   try {
     await window.signOut(window.auth);
     state.adminUnlocked = false;
     state.userRole = null;
-    
     renderNavigationMenu(null);
     showView("login");
   } catch (error) {
@@ -237,30 +304,90 @@ async function logoutAdmin() {
   }
 }
 
-/**
- * =========================================================================
- * ⚙️ SECCIÓN 3: CONTROLADOR DE REGLAS DE CONTROL DE STOCK
- * =========================================================================
- */
+// ============================================================
+// SECCIÓN 3: REGLAS DE STOCK (KOLO)
+// ============================================================
+
+async function loadRules() {
+  try {
+    const data = await firestoreGetDocData("adminRules");
+    state.adminRules = data.adminRules || {};
+    console.log("📋 Reglas KOLO cargadas desde Firestore:", Object.keys(state.adminRules).length);
+    
+    const metadata = await firestoreGetDocData("reglasMetadata");
+    if (metadata && metadata.lastUpdate) {
+      reglasLastUpdate = new Date(metadata.lastUpdate);
+      reglasFileName = metadata.fileName || "Reglas KOLO cargadas";
+    } else if (Object.keys(state.adminRules).length > 0) {
+      reglasLastUpdate = new Date();
+      reglasFileName = "Reglas KOLO existentes";
+    }
+    
+    updateReglasStatusDisplay();
+    
+    if (typeof applyAdminFilter === "function") {
+      applyAdminFilter();
+    }
+  } catch (e) {
+    console.error("Error cargando reglas:", e);
+    state.adminRules = {};
+  }
+}
+
+async function persistRules() { 
+  await firestoreSetDocData("adminRules", { adminRules: state.adminRules }); 
+}
 
 function buildAdminSourceRows() {
   const allSKUs = new Set();
+  
   if (state.rows && state.rows.length) {
-    state.rows.forEach(r => allSKUs.add(r.SKU));
+    state.rows.forEach(r => {
+      if (r.SKU && r.SKU.trim() !== "") {
+        allSKUs.add(r.SKU);
+      }
+    });
   }
-  Object.keys(state.adminRules).forEach(sku => allSKUs.add(sku));
+  
+  if (state.adminRules && Object.keys(state.adminRules).length > 0) {
+    Object.keys(state.adminRules).forEach(sku => {
+      if (sku && sku.trim() !== "") {
+        allSKUs.add(sku);
+      }
+    });
+  }
   
   const rows = [];
   allSKUs.forEach(sku => {
-    const producto = state.rows?.find(r => r.SKU === sku)?.Producto || state.adminRules[sku]?.producto || "";
+    let producto = "";
+    
+    if (state.rows && state.rows.length) {
+      const found = state.rows.find(r => r.SKU === sku);
+      if (found && found.Producto) {
+        producto = found.Producto;
+      }
+    }
+    
+    if (!producto && state.adminRules[sku] && state.adminRules[sku].producto) {
+      producto = state.adminRules[sku].producto;
+    }
+    
+    if (!producto && state.listaCompleta && state.listaCompleta.length) {
+      const foundInPrecios = state.listaCompleta.find(item => item.CODIGO === sku);
+      if (foundInPrecios && foundInPrecios.DESCRIPCION) {
+        producto = foundInPrecios.DESCRIPCION;
+      }
+    }
+    
     rows.push({
       SKU: sku,
-      Producto: producto,
+      Producto: producto || "Sin nombre",
       Minimo: state.adminRules[sku]?.minimo ?? "",
       Maximo: state.adminRules[sku]?.maximo ?? ""
     });
   });
-  return rows.sort((a,b) => norm(a.SKU).localeCompare(norm(b.SKU)));
+  
+  return rows.sort((a, b) => norm(a.SKU).localeCompare(norm(b.SKU)));
 }
 
 function applyAdminFilter() {
@@ -295,6 +422,8 @@ function applyAdminFilter() {
     else if (state.adminActiveFilter === "sinRegla") text = `📭 ${pageRows.length} de ${totalItems} SKUs sin reglas`;
     filterInfo.textContent = text;
   }
+  
+  updateReglasStatusDisplay();
 }
 
 function saveRulesFromInputs() {
@@ -321,6 +450,18 @@ function saveRulesFromInputs() {
   persistRules();
   recalculateRows();
   applyAdminFilter();
+  
+  reglasLastUpdate = new Date();
+  reglasFileName = "Reglas KOLO editadas manualmente";
+  updateReglasStatusDisplay();
+  
+  firestoreSetDocData("reglasMetadata", {
+    lastUpdate: reglasLastUpdate.toISOString(),
+    fileName: "Reglas KOLO editadas manualmente",
+    totalCount: Object.keys(state.adminRules).length
+  }).catch(e => console.warn("No se pudo guardar metadata de reglas"));
+  
+  setStatus("✅ Reglas guardadas correctamente", false);
 }
 
 function clearAllRules() {
@@ -330,6 +471,12 @@ function clearAllRules() {
     persistRules();
     recalculateRows();
     applyAdminFilter();
+    
+    reglasLastUpdate = null;
+    reglasFileName = null;
+    updateReglasStatusDisplay();
+    
+    setStatus("✅ Todas las reglas han sido eliminadas", false);
   }
 }
 
@@ -344,15 +491,34 @@ function addNewSku() {
     return;
   }
   
-  state.adminRules[skuTrim] = { minimo: "", maximo: "", producto: "" };
+  let producto = "";
+  if (state.listaCompleta) {
+    const found = state.listaCompleta.find(item => item.CODIGO === skuTrim);
+    if (found) producto = found.DESCRIPCION;
+  }
+  
+  state.adminRules[skuTrim] = { minimo: "", maximo: "", producto: producto };
   persistRules();
   recalculateRows();
   applyAdminFilter();
+  
+  reglasLastUpdate = new Date();
+  reglasFileName = "SKU agregado manualmente";
+  updateReglasStatusDisplay();
+  
+  firestoreSetDocData("reglasMetadata", {
+    lastUpdate: reglasLastUpdate.toISOString(),
+    fileName: "SKU agregado manualmente",
+    totalCount: Object.keys(state.adminRules).length
+  }).catch(e => console.warn("No se pudo guardar metadata de reglas"));
+  
+  setStatus(`✅ SKU "${skuTrim}" agregado.`, false);
 }
 
 function importRulesExcel() {
   if (!state.adminUnlocked) return;
-  const file = document.getElementById("adminExcelInput").files[0];
+  const fileInput = document.getElementById("adminExcelInput");
+  const file = fileInput.files[0];
   if (!file) return;
   
   const reader = new FileReader();
@@ -368,14 +534,11 @@ function importRulesExcel() {
       let headerRowIndex = 0;
       let skuIdx = -1, minIdx = -1, maxIdx = -1, prodIdx = -1;
 
-      // 1. Encontrar la fila de cabecera de forma robusta
       for (let i = 0; i < Math.min(20, aoa.length); i++) {
         const row = Array.isArray(aoa[i]) ? aoa[i] : [];
         const joined = norm(row.join(" | "));
         if ((joined.includes("sku") || joined.includes("codigo")) && (joined.includes("min") || joined.includes("max"))) {
           headerRowIndex = i; 
-          
-          // Mapear los índices directamente aquí usando la fila real detectada
           row.forEach((cell, idx) => {
             const cNorm = norm(String(cell || ""));
             if (cNorm.includes("sku") || cNorm.includes("codigo")) skuIdx = idx;
@@ -387,15 +550,14 @@ function importRulesExcel() {
         }
       }
       
-      // Validar que al menos encontramos la columna identificadora de ítems (SKU)
       if (skuIdx === -1) {
         alert("No se encontró la columna SKU o Código en el archivo.");
+        fileInput.value = "";
         return;
       }
       
       let importedCount = 0;
       
-      // 2. Procesar los datos desde la fila posterior a la cabecera
       for (let i = headerRowIndex + 1; i < aoa.length; i++) {
         const rowArr = aoa[i] || [];
         if (!rowArr.some(v => String(v || "").trim() !== "")) continue;
@@ -403,14 +565,17 @@ function importRulesExcel() {
         const sku = String(rowArr[skuIdx] || "").trim();
         if (!sku) continue;
         
-        // Extraer valores de forma segura basándose en los índices encontrados
         const minimo = minIdx !== -1 ? toNumOrNull(rowArr[minIdx]) : null;
         const maximo = maxIdx !== -1 ? toNumOrNull(rowArr[maxIdx]) : null;
-        const producto = prodIdx !== -1 ? String(rowArr[prodIdx] || "").trim() : "";
+        let producto = prodIdx !== -1 ? String(rowArr[prodIdx] || "").trim() : "";
+        
+        if (!producto && state.listaCompleta) {
+          const found = state.listaCompleta.find(item => item.CODIGO === sku);
+          if (found) producto = found.DESCRIPCION;
+        }
         
         if (minimo === null && maximo === null && !producto) continue;
         
-        // Guardar las reglas en el estado global
         state.adminRules[sku] = {
           minimo: minimo === null ? "" : minimo,
           maximo: maximo === null ? "" : maximo,
@@ -422,23 +587,108 @@ function importRulesExcel() {
       persistRules();
       recalculateRows();
       applyAdminFilter();
-      document.getElementById("adminExcelInput").value = "";
+      
+      reglasLastUpdate = new Date();
+      reglasFileName = file.name;
+      updateReglasStatusDisplay();
+      
+      firestoreSetDocData("reglasMetadata", {
+        lastUpdate: reglasLastUpdate.toISOString(),
+        fileName: file.name,
+        totalCount: importedCount
+      }).catch(e => console.warn("No se pudo guardar metadata de reglas"));
+      
+      // 🔥 LIMPIAR INPUT
+      fileInput.value = "";
+      
       alert(`Se importaron con éxito ${importedCount} reglas de inventario.`);
+      setStatus(`✅ Reglas importadas: ${importedCount} SKUs`, false);
     } catch (err) { 
       console.error("Error al procesar el archivo Excel de reglas:", err); 
+      setStatus("❌ Error al importar reglas", true);
+      fileInput.value = "";
     }
   };
   reader.readAsArrayBuffer(file);
 }
-/**
- * =========================================================================
- * 📈 SECCIÓN 4: INGESTA DE PRECIOS DEL CATÁLOGO MAESTRO (CON IVA)
- * =========================================================================
- */
+
+// ============================================================
+// SECCIÓN 4: PRECIOS
+// ============================================================
+
+async function loadListaCompleta() {
+  try {
+    const data = await firestoreGetDocData("listaCompleta");
+    state.listaCompleta = data.listaCompleta || [];
+    state.preciosLookup = data.preciosLookup || {};
+    
+    if (data.lastUpdate) {
+      preciosLastUpdate = new Date(data.lastUpdate);
+      preciosFileName = data.fileName || "Precios cargados";
+      updatePreciosStatusDisplay(state.listaCompleta.length);
+    } else if (state.listaCompleta.length > 0) {
+      preciosLastUpdate = new Date();
+      preciosFileName = "Precios existentes";
+      updatePreciosStatusDisplay(state.listaCompleta.length);
+    }
+
+    let templateDate = localStorage.getItem('tecnobahia_pedido_template_date');
+    let templateBase64 = localStorage.getItem('tecnobahia_pedido_template_base64');
+    let templateName = localStorage.getItem('tecnobahia_pedido_template_name');
+    
+    if (!templateBase64) {
+      const templateData = await firestoreGetDocData("pedidoTemplate");
+      if (templateData && templateData.pedidoTemplateBase64) {
+        templateBase64 = templateData.pedidoTemplateBase64;
+        templateName = templateData.pedidoTemplateName;
+        templateDate = templateData.uploadedAt;
+        
+        if (templateBase64) {
+          localStorage.setItem('tecnobahia_pedido_template_base64', templateBase64);
+          localStorage.setItem('tecnobahia_pedido_template_name', templateName);
+          if (templateDate) localStorage.setItem('tecnobahia_pedido_template_date', templateDate);
+        }
+      }
+    }
+    
+    if (templateBase64 && templateName) {
+      state.pedidoTemplateBase64 = templateBase64;
+      state.pedidoTemplateLoaded = true;
+      state.pedidoTemplateName = templateName;
+      console.log("📄 Plantilla cargada:", templateName);
+    }
+    
+    if (typeof updateTemplateStatusDisplay === "function") {
+      updateTemplateStatusDisplay();
+    }
+    
+    updateReglasStatusDisplay();
+  } catch (e) {
+    console.error("Error en loadListaCompleta:", e);
+    state.listaCompleta = [];
+    state.preciosLookup = {};
+  }
+}
+
+async function saveListaCompleta() {
+  try {
+    await firestoreSetDocData("listaCompleta", {
+      listaCompleta: state.listaCompleta,
+      preciosLookup: state.preciosLookup,
+      lastUpdate: preciosLastUpdate ? preciosLastUpdate.toISOString() : new Date().toISOString(),
+      fileName: preciosFileName || "Precios cargados",
+      totalCount: state.listaCompleta.length
+    });
+    console.log("✅ Precios y metadata guardados en Firestore");
+  } catch (e) {
+    console.error("Error guardando precios:", e);
+  }
+}
 
 async function importListaCompleta() {
   if (!state.adminUnlocked) return;
-  const file = document.getElementById("listaCompletaInput").files[0];
+  const fileInput = document.getElementById("listaCompletaInput");
+  const file = fileInput.files[0];
   if (!file) return;
   
   const reader = new FileReader();
@@ -453,7 +703,11 @@ async function importListaCompleta() {
       const sheet = workbook.Sheets[sheetName];
       const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
       
-      if (!aoa.length) return;
+      if (!aoa.length) {
+        setStatus("No se encontraron datos en el archivo.", true);
+        fileInput.value = "";
+        return;
+      }
       
       let headerRowIndex = 0;
       for (let i = 0; i < Math.min(20, aoa.length); i++) {
@@ -478,7 +732,11 @@ async function importListaCompleta() {
         if (hNorm.includes("pad") && hNorm.includes("sin")) precioColPAD = idx;
       });
       
-      if (codigoCol === null || precioColPAD === null) return;
+      if (codigoCol === null || precioColPAD === null) {
+        setStatus("❌ No se encontraron las columnas necesarias", true);
+        fileInput.value = "";
+        return;
+      }
       
       state.listaCompleta = [];
       state.preciosLookup = {};
@@ -492,7 +750,7 @@ async function importListaCompleta() {
         const descripcion = descCol !== null ? String(rowArr[descCol] || "").trim() : "";
         
         const precioSinIva = toNum(rowArr[precioColPAD]);
-        const precioConIva = precioSinIva * 1.13; // Aplicación del 13% de IVA
+        const precioConIva = precioSinIva * 1.13;
         
         if (!codigo) continue;
         
@@ -507,6 +765,9 @@ async function importListaCompleta() {
         processedCount++;
       }
       
+      preciosLastUpdate = new Date();
+      preciosFileName = file.name;
+      
       await saveListaCompleta();
 
       if (state.rows && state.rows.length > 0) {
@@ -515,37 +776,247 @@ async function importListaCompleta() {
       }
 
       applyAdminFilter();
-      document.getElementById("listaCompletaInput").value = "";
+      
+      // 🔥 LIMPIAR INPUT
+      fileInput.value = "";
+      
+      setStatus(`✅ ${processedCount} precios cargados exitosamente.`, false);
     } catch (err) {
       console.error(err);
+      setStatus("Error al cargar precios.", true);
+      fileInput.value = "";
     }
   };
   reader.readAsArrayBuffer(file);
 }
 
-/**
- * =========================================================================
- * 🌙 SECCIÓN 5: CONFIGURACIONES DE ENTORNO (MODO OSCURO)
- * =========================================================================
- */
+// ============================================================
+// SECCIÓN 5: MODO OSCURO
+// ============================================================
 
 function initDarkMode() {
+  console.log("🎨 Inicializando modo oscuro...");
+  
   const toggleBtn = document.getElementById('darkModeToggle');
+  if (!toggleBtn) {
+    console.error("❌ Botón darkModeToggle no encontrado");
+    return;
+  }
   
   if (state.darkMode) {
     document.body.classList.add('dark');
-    if (toggleBtn) toggleBtn.innerHTML = '☀️ Modo claro';
+    toggleBtn.textContent = '☀️ Modo claro';
   } else {
     document.body.classList.remove('dark');
-    if (toggleBtn) toggleBtn.innerHTML = '🌙 Modo oscuro';
+    toggleBtn.textContent = '🌙 Modo oscuro';
   }
   
-  if (toggleBtn) {
-    toggleBtn.addEventListener('click', () => {
-      document.body.classList.toggle('dark');
-      state.darkMode = document.body.classList.contains('dark');
-      persistSettings();
-      toggleBtn.innerHTML = state.darkMode ? '☀️ Modo claro' : '🌙 Modo oscuro';
+  function updateChipsStyle() {
+    const chips = document.querySelectorAll('.filter-chip, .admin-filter-chip');
+    chips.forEach(chip => {
+      chip.style.transform = 'scale(1)';
+      setTimeout(() => { chip.style.transform = ''; }, 10);
     });
   }
+  
+  const newBtn = toggleBtn.cloneNode(true);
+  toggleBtn.parentNode.replaceChild(newBtn, toggleBtn);
+  
+  newBtn.addEventListener('click', async () => {
+    console.log("🖱️ Click en botón de modo oscuro");
+    document.body.classList.toggle('dark');
+    const isDark = document.body.classList.contains('dark');
+    state.darkMode = isDark;
+    newBtn.textContent = isDark ? '☀️ Modo claro' : '🌙 Modo oscuro';
+    
+    updateChipsStyle();
+    
+    console.log("💾 Guardando modo oscuro =", isDark);
+    await persistSettings();
+    console.log("✅ Modo oscuro guardado exitosamente");
+  });
+  
+  updateChipsStyle();
+  
+  console.log("✅ Modo oscuro inicializado con valor:", state.darkMode);
+}
+
+// ============================================================
+// SECCIÓN 6: PLANTILLA DE PEDIDO
+// ============================================================
+
+async function uploadPedidoTemplate() {
+  if (!state.adminUnlocked) {
+    setStatus("⚠️ No tienes permisos de administrador.", true);
+    return;
+  }
+  
+  const fileInput = document.getElementById("pedidoTemplateInput");
+  const file = fileInput.files[0];
+  
+  if (!file) {
+    setStatus("❌ Por favor selecciona un archivo Excel primero.", true);
+    return;
+  }
+  
+  const validExtensions = ['.xlsx', '.xls', '.xlsm'];
+  const fileExt = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+  if (!validExtensions.includes(fileExt)) {
+    setStatus("❌ El archivo debe ser de tipo Excel (.xlsx, .xls, .xlsm)", true);
+    fileInput.value = "";
+    return;
+  }
+  
+  setStatus("📤 Subiendo plantilla de pedido...", false);
+  
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const workbook = XLSX.read(arrayBuffer, { type: "array" });
+    const hasPedidoSheet = workbook.SheetNames.some(name => 
+      name.toLowerCase() === "pedido" || name.toLowerCase().includes("pedido")
+    );
+    
+    if (!hasPedidoSheet) {
+      setStatus("❌ La plantilla debe contener una hoja llamada 'PEDIDO'", true);
+      fileInput.value = "";
+      return;
+    }
+    
+    const base64 = await arrayBufferToBase64(arrayBuffer);
+    
+    state.pedidoTemplateBase64 = base64;
+    state.pedidoTemplateLoaded = true;
+    state.pedidoTemplateName = file.name;
+    
+    const now = new Date();
+    localStorage.setItem('tecnobahia_pedido_template_base64', base64);
+    localStorage.setItem('tecnobahia_pedido_template_name', file.name);
+    localStorage.setItem('tecnobahia_pedido_template_date', now.toISOString());
+    
+    await firestoreSetDocData("pedidoTemplate", {
+      pedidoTemplateBase64: base64,
+      pedidoTemplateName: file.name,
+      uploadedAt: now.toISOString()
+    }).catch(e => console.warn("No se pudo guardar en Firestore:", e));
+    
+    console.log("✅ Plantilla guardada en localStorage");
+    
+    updateTemplateStatusDisplay();
+    
+    // 🔥 LIMPIAR INPUT
+    fileInput.value = "";
+    
+    setStatus(`✅ Plantilla "${file.name}" subida con éxito.`, false);
+    updateExportButtonState();
+    
+  } catch (error) {
+    console.error("Error al subir plantilla:", error);
+    setStatus("❌ Error al procesar el archivo. Verifica que sea un Excel válido.", true);
+    fileInput.value = "";
+  }
+}
+
+async function downloadCurrentTemplate() {
+  if (!state.pedidoTemplateBase64) {
+    setStatus("❌ No hay una plantilla de pedido cargada.", true);
+    return;
+  }
+  
+  try {
+    const binaryString = atob(state.pedidoTemplateBase64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    
+    const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = state.pedidoTemplateName || "plantilla_pedido.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    setStatus(`📥 Descargando plantilla "${state.pedidoTemplateName}"...`, false);
+  } catch (error) {
+    console.error("Error al descargar plantilla:", error);
+    setStatus("❌ Error al descargar la plantilla.", true);
+  }
+}
+
+function updateTemplateStatusDisplay() {
+  const templateNameDisplay = document.getElementById("templateNameDisplay");
+  if (templateNameDisplay) {
+    if (state.pedidoTemplateLoaded && state.pedidoTemplateName) {
+      const savedDate = localStorage.getItem('tecnobahia_pedido_template_date');
+      let fechaTexto = "";
+      if (savedDate) {
+        try {
+          const fecha = new Date(savedDate);
+          if (!isNaN(fecha.getTime())) {
+            fechaTexto = `<br>📅 ${fecha.toLocaleString('es-ES', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            })}`;
+          }
+        } catch(e) {
+          console.warn("Error al parsear fecha de plantilla");
+        }
+      }
+      templateNameDisplay.innerHTML = `✅ Plantilla actual: <strong>${escapeHtml(state.pedidoTemplateName)}</strong>${fechaTexto}`;
+      templateNameDisplay.style.color = "var(--ok)";
+    } else {
+      templateNameDisplay.innerHTML = `⚠️ No hay plantilla cargada. Sube una plantilla para poder generar pedidos.`;
+      templateNameDisplay.style.color = "var(--warning)";
+    }
+  }
+}
+
+function updateExportButtonState() {
+  const btn = document.getElementById("btnExport");
+  if (!btn) return;
+  
+  const hasData = state.rows && state.rows.length > 0;
+  const hasTemplate = state.pedidoTemplateLoaded === true;
+  
+  btn.disabled = !(hasData && hasTemplate);
+  
+  if (!hasTemplate) {
+    btn.title = "Primero sube una plantilla en el Panel Admin";
+    btn.style.opacity = "0.5";
+  } else if (!hasData) {
+    btn.title = "Primero carga un archivo de inventario";
+    btn.style.opacity = "0.5";
+  } else {
+    btn.title = "Descargar pedido";
+    btn.style.opacity = "1";
+  }
+}
+
+function getPedidoWorkbook() {
+  if (!state.pedidoTemplateBase64) return null;
+  try {
+    return XLSX.read(state.pedidoTemplateBase64, { type: "base64", cellDates: true });
+  } catch (e) {
+    console.error("Error leyendo plantilla PEDIDO:", e);
+    return null;
+  }
+}
+
+function arrayBufferToBase64(buffer) {
+  return new Promise((resolve, reject) => {
+    const blob = new Blob([buffer]);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64 = reader.result.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 }

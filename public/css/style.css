@@ -292,25 +292,83 @@ th { background: var(--table-header-bg); }
   flex-wrap: wrap;
 }
 
+/* ============================================================
+   FILTROS (CHIPS) - CON ALTA PRIORIDAD
+   ============================================================ */
+
 .filter-chip, .admin-filter-chip {
-  background: var(--chip-bg);
-  border: 1px solid var(--border);
-  border-radius: 30px;
-  padding: 6px 14px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
+  background: var(--chip-bg) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 30px !important;
+  padding: 6px 14px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  color: var(--text) !important;
 }
 
 .filter-chip.active, .admin-filter-chip.active {
-  background: var(--primary);
-  color: white;
-  border-color: var(--primary);
+  background: var(--primary) !important;
+  color: white !important;
+  border-color: var(--primary) !important;
 }
 
 .filter-chip:hover:not(.active), .admin-filter-chip:hover:not(.active) {
-  background: var(--chip-hover);
+  background: var(--chip-hover) !important;
+}
+
+/* Estilos específicos para MODO OSCURO con mayor prioridad */
+body.dark .filter-chip,
+body.dark .admin-filter-chip,
+body.dark .filter-chip:not(.active),
+body.dark .admin-filter-chip:not(.active) {
+  background: #1f2937 !important;
+  color: #eef2ff !important;
+  border-color: #2d3748 !important;
+}
+
+body.dark .filter-chip.active,
+body.dark .admin-filter-chip.active {
+  background: #3b82f6 !important;
+  color: white !important;
+  border-color: #3b82f6 !important;
+}
+
+body.dark .filter-chip:hover:not(.active),
+body.dark .admin-filter-chip:hover:not(.active) {
+  background: #374151 !important;
+}
+
+/* Filtro "Sin stock" - modo claro */
+.filter-chip[data-filter="zero"] {
+  background: #fbbf24 !important;
+  color: #1a1a2e !important;
+  border-color: #fbbf24 !important;
+}
+
+.filter-chip[data-filter="zero"].active {
+  background: #ea580c !important;
+  color: white !important;
+  border-color: #ea580c !important;
+}
+
+/* Filtro "Sin stock" - modo oscuro */
+body.dark .filter-chip[data-filter="zero"] {
+  background: #b45309 !important;
+  color: white !important;
+  border-color: #b45309 !important;
+}
+
+body.dark .filter-chip[data-filter="zero"].active {
+  background: #ea580c !important;
+  color: white !important;
+  border-color: #ea580c !important;
+}
+
+/* Contenedor de filtros */
+.filter-buttons, .admin-filters {
+  background: transparent !important;
 }
 
 .admin-filters {
@@ -419,4 +477,171 @@ th { background: var(--table-header-bg); }
 
 .dark-mode-btn:hover {
   background: var(--chip-hover);
+}
+
+/* ============================================================
+   MODAL STYLES
+   ============================================================ */
+
+.modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 10000;
+  justify-content: center;
+  align-items: center;
+}
+
+.modal.open {
+  display: flex;
+}
+
+.modal > div {
+  background: var(--card);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 24px;
+  width: 90%;
+  max-width: 450px;
+  box-shadow: 0 20px 40px var(--shadow);
+}
+
+/* Modo oscuro para el modal */
+body.dark .modal > div {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+/* Resultados de búsqueda en modal */
+.search-result-item {
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.2s;
+  color: var(--text);
+}
+
+.search-result-item:hover {
+  background: var(--chip-hover);
+}
+
+.search-result-item.selected {
+  background: var(--primary);
+  color: white;
+}
+
+.search-result-sku {
+  font-weight: bold;
+  font-size: 14px;
+}
+
+.search-result-name {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.search-result-price {
+  font-size: 12px;
+  color: var(--ok);
+  margin-top: 4px;
+}
+
+body.dark .search-result-price {
+  color: #4ade80;
+}
+
+/* ============================================================
+   TOOLTIP STYLES
+   ============================================================ */
+
+.tooltip {
+  position: relative;
+  cursor: help;
+  display: inline-block;
+  border-bottom: 1px dashed var(--muted);
+}
+
+.tooltip .tooltip-text {
+  visibility: hidden;
+  background-color: var(--card);
+  color: var(--text);
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  position: absolute;
+  z-index: 1;
+  bottom: 125%;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 12px;
+  box-shadow: 0 2px 8px var(--shadow);
+}
+
+body.dark .tooltip .tooltip-text {
+  background-color: var(--card);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.tooltip:hover .tooltip-text {
+  visibility: visible;
+}
+
+/* ============================================================
+   INFO ICON STYLES
+   ============================================================ */
+
+.info-icon {
+  cursor: pointer;
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--primary);
+  background: var(--chip-bg);
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  text-align: center;
+  line-height: 18px;
+}
+
+.info-icon:hover {
+  background: var(--primary);
+  color: white;
+}
+
+body.dark .info-icon {
+  background: var(--chip-bg);
+  color: var(--primary);
+}
+
+body.dark .info-icon:hover {
+  background: var(--primary);
+  color: white;
+} 
+/* Tooltip flotante para Min y Max */
+.minmax-tooltip {
+  position: absolute;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  box-shadow: 0 4px 12px var(--shadow);
+  z-index: 1000;
+  white-space: nowrap;
+}
+
+body.dark .minmax-tooltip {
+  background: #1f2937;
+  color: #eef2ff;
+  border-color: #2d3748;
 }

@@ -1,95 +1,232 @@
 // js/ui.js
 
-/**
- * =========================================================================
- * 📊 SECCIÓN 1: RENDERIZADO DEL REPORTE DE INVENTARIO Y CONTROL DE INPUTS
- * =========================================================================
- */
+// ============================================================
+// SECCIÓN 1: RENDERIZADO DE TABLA PRINCIPAL CON PAGINACIÓN
+// ============================================================
 
-/**
- * Renderiza la tabla de datos de forma dinámica adaptando las columnas visibles,
- * añadiendo inputs interactivos para modificar pedidos en caliente y aplicando estilos por clase.
- */
+// Estado de ordenamiento y paginación
+if (typeof window.sortState === 'undefined') {
+  window.sortState = {
+    column: 'Inventario',
+    direction: 'desc'
+  };
+}
+
+// Estado de paginación para el reporte
+if (typeof window.reportPageState === 'undefined') {
+  window.reportPageState = {
+    currentPage: 1,
+    pageSize: 10
+  };
+}
+
 function renderTableDynamic(data, filterType) {
   const thead = document.getElementById("tableHeader");
   const tbody = document.getElementById("tableBody");
   if (!thead || !tbody) return;
 
+  const activeFilter = String(filterType || "todos").toLowerCase();
+
+  // Definir columnas según el filtro
   let columns = [];
-  if (filterType === "pedido") {
+  if (activeFilter === "pedido" || activeFilter === "pedir") {
     columns = [
-      { key: "SKU", label: "SKU" },
-      { key: "Producto", label: "Producto" },
-      { key: "Inventario", label: "Inventario" },
-      { key: "CostoUnitario", label: "Costo unitario" },
-      { key: "PedidoSugerido", label: "Pedido" },
-      { key: "CostoTotal", label: "Costo total" }
+      { key: "SKU", label: "SKU", sortable: true },
+      { key: "Producto", label: "Producto", sortable: false },
+      { key: "Inventario", label: "Inventario", sortable: true },
+      { key: "CostoUnitario", label: "Costo unitario", sortable: true },
+      { key: "PedidoSugerido", label: "Pedido", sortable: true },
+      { key: "CostoTotal", label: "Costo total", sortable: true },
+      { key: "Acciones", label: "", sortable: false }
     ];
-  } else if (filterType === "exceso") {
+  } else if (activeFilter === "exceso") {
     columns = [
-      { key: "SKU", label: "SKU" },
-      { key: "Producto", label: "Producto" },
-      { key: "Inventario", label: "Inventario" },
-      { key: "CostoUnitario", label: "Costo unitario" },
-      { key: "CostoTotal", label: "Costo total" },
-      { key: "Exceso", label: "Exceso" }
+      { key: "SKU", label: "SKU", sortable: true },
+      { key: "Producto", label: "Producto", sortable: false },
+      { key: "Inventario", label: "Inventario", sortable: true },
+      { key: "CostoUnitario", label: "Costo unitario", sortable: true },
+      { key: "CostoTotal", label: "Costo total", sortable: true },
+      { key: "Exceso", label: "Exceso", sortable: true },
+      { key: "Acciones", label: "", sortable: false }
     ];
-  } else if (filterType === "ok") {
+  } else if (activeFilter === "ok") {
     columns = [
-      { key: "SKU", label: "SKU" },
-      { key: "Producto", label: "Producto" },
-      { key: "Inventario", label: "Inventario" },
-      { key: "CostoUnitario", label: "Costo unitario" },
-      { key: "CostoTotal", label: "Costo total" },
-      { key: "Estado", label: "Estado" }
+      { key: "SKU", label: "SKU", sortable: true },
+      { key: "Producto", label: "Producto", sortable: false },
+      { key: "Inventario", label: "Inventario", sortable: true },
+      { key: "CostoUnitario", label: "Costo unitario", sortable: true },
+      { key: "CostoTotal", label: "Costo total", sortable: true },
+      { key: "Estado", label: "Estado", sortable: false },
+      { key: "Acciones", label: "", sortable: false }
+    ];
+  } else if (activeFilter === "zero") {
+    columns = [
+      { key: "SKU", label: "SKU", sortable: true },
+      { key: "Producto", label: "Producto", sortable: false },
+      { key: "Inventario", label: "Inventario", sortable: true },
+      { key: "CostoUnitario", label: "Costo unitario", sortable: true },
+      { key: "Minimo", label: "Minimo", sortable: true },
+      { key: "Maximo", label: "Maximo", sortable: true },
+      { key: "PedidoSugerido", label: "Pedido", sortable: true },
+      { key: "CostoTotal", label: "Costo total", sortable: true },
+      { key: "Acciones", label: "", sortable: false }
     ];
   } else {
     columns = [
-      { key: "SKU", label: "SKU" },
-      { key: "Producto", label: "Producto" },
-      { key: "Inventario", label: "Inventario" },
-      { key: "CostoUnitario", label: "Costo unitario" },
-      { key: "PedidoSugerido", label: "Pedido" },
-      { key: "CostoTotal", label: "Costo total" },
-      { key: "Estado", label: "Estado" }
+      { key: "SKU", label: "SKU", sortable: true },
+      { key: "Producto", label: "Producto", sortable: false },
+      { key: "Inventario", label: "Inventario", sortable: true },
+      { key: "CostoUnitario", label: "Costo unitario", sortable: true },
+      { key: "PedidoSugerido", label: "Pedido", sortable: true },
+      { key: "CostoTotal", label: "Costo total", sortable: true },
+      { key: "Estado", label: "Estado", sortable: false },
+      { key: "Acciones", label: "", sortable: false }
     ];
   }
 
-  thead.innerHTML = '<tr>' + columns.map(col => `<th>${col.label}</th>`).join('') + '</tr>';
+  // Generar encabezados con eventos de ordenamiento
+  thead.innerHTML = `<tr>${columns.map(col => {
+    let sortIcon = '';
+    if (col.sortable) {
+      if (window.sortState.column === col.key) {
+        sortIcon = window.sortState.direction === 'desc' ? ' 🔽' : ' 🔼';
+      } else if (col.key === 'Inventario' && !window.sortState.column) {
+        sortIcon = ' 🔽';
+      }
+      return `<th style="cursor: pointer;" onclick="sortTable('${col.key}')">${col.label}${sortIcon}</th>`;
+    }
+    return `<th>${col.label}</th>`;
+  }).join('')}</tr>`;
 
   if (data.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="${columns.length}" style="text-align:center; padding:40px;">📭 No hay productos que coincidan con el filtro seleccionado</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${columns.length}" style="text-align:center; padding:40px;">No hay productos que coincidan con el filtro seleccionado</td></tr>`;
+    document.getElementById("reportPagination")?.remove();
     return;
   }
 
-  tbody.innerHTML = data.map(r => {
+  // Aplicar ordenamiento
+  let sortedData = [...data];
+  if (window.sortState.column) {
+    sortedData.sort((a, b) => {
+      let valA = a[window.sortState.column];
+      let valB = b[window.sortState.column];
+      
+      if (valA === undefined || valA === null || valA === "") valA = 0;
+      if (valB === undefined || valB === null || valB === "") valB = 0;
+      
+      if (typeof valA === 'number' && typeof valB === 'number') {
+        return window.sortState.direction === 'desc' ? valB - valA : valA - valB;
+      }
+      const strA = String(valA).toLowerCase();
+      const strB = String(valB).toLowerCase();
+      if (window.sortState.direction === 'desc') {
+        return strB.localeCompare(strA);
+      }
+      return strA.localeCompare(strB);
+    });
+  } else {
+    // Orden por defecto: Inventario de mayor a menor
+    sortedData.sort((a, b) => {
+      const invA = a.Inventario || 0;
+      const invB = b.Inventario || 0;
+      return invB - invA;
+    });
+  }
+
+  // Paginación
+  const totalItems = sortedData.length;
+  const totalPages = Math.ceil(totalItems / window.reportPageState.pageSize);
+  const startIndex = (window.reportPageState.currentPage - 1) * window.reportPageState.pageSize;
+  const paginatedData = sortedData.slice(startIndex, startIndex + window.reportPageState.pageSize);
+
+  // Renderizar filas
+  tbody.innerHTML = paginatedData.map(r => {
     let estadoClass = "";
-    if (r.PedidoSugerido > 0) estadoClass = "tag-danger";
-    else if (r.Exceso > 0) estadoClass = "tag-warning";
-    else if (r.Estado === "OK") estadoClass = "tag-ok";
+    let estadoTexto = "";
+    
+    if (r.PedidoSugerido > 0) {
+      estadoClass = "tag-danger";
+      estadoTexto = "PEDIR";
+    } else if (r.Exceso > 0) {
+      estadoClass = "tag-warning";
+      estadoTexto = "EXCESO";
+    } else if (r.Estado === "OK") {
+      estadoClass = "tag-ok";
+      estadoTexto = "OK";
+    } else if (r.Estado === "SIN REGLAS") {
+      estadoClass = "";
+      estadoTexto = "SIN REGLAS";
+    } else {
+      estadoTexto = r.Estado || "SIN REGLAS";
+    }
 
     const cells = columns.map(col => {
       let value = r[col.key];
       let className = "";
       let displayValue = "";
-
-      if (col.key === "PedidoSugerido" && r.PedidoSugerido > 0) {
+      
+      if (col.key === "Acciones") {
+        return `<td style="text-align: center;">
+                  <button class="btn-delete-row" data-remove-sku="${escapeHtml(r.SKU)}" style="background:none; border:none; cursor:pointer; font-size:1.2em; color: var(--danger);" title="Quitar producto">🗑</button>
+                  </td>`;
+      }
+      
+      if (col.key === "Inventario") {
+        const invValue = (value === undefined || value === null || value === "") ? 0 : value;
+        const hasMinMax = (r.Minimo && r.Minimo !== "") || (r.Maximo && r.Maximo !== "");
+        
+        if (invValue === 0) {
+          displayValue = `<span style="color: var(--danger); font-weight: bold;">0</span>`;
+        } else {
+          displayValue = Math.floor(invValue).toLocaleString("en-US");
+        }
+        
+        if (hasMinMax) {
+          displayValue += ` <span class="info-icon" onclick="event.stopPropagation(); showMinMaxInfo('${escapeHtml(r.SKU)}')" title="Ver Minimo y Maximo">i</span>`;
+        }
+      }
+      else if (col.key === "PedidoSugerido" && r.PedidoSugerido > 0) {
         className = "tag-danger";
-        displayValue = `<input type="number" class="pedido-sugerido-input" data-sku="${escapeHtml(r.SKU)}" value="${Math.max(0, Number(r.PedidoSugerido))}" min="0" style="width:90px; padding:4px; border:1px solid var(--border); border-radius:6px; text-align: right;" />`;
-      } else if (value === "" || value === undefined || value === null) {
+        displayValue = `<input type="number" class="pedido-sugerido-input" data-sku="${escapeHtml(r.SKU)}" value="${Math.max(0, Number(r.PedidoSugerido))}" min="0" style="width:80px; padding:4px; border:1px solid var(--border); border-radius:6px; text-align: center;" />`;
+      } 
+      else if (col.key === "CostoUnitario") {
+        if (value !== null && value !== "" && !isNaN(value) && value > 0) {
+          displayValue = `$${fmt(value)}`;
+        } else {
+          displayValue = `<span style="color: var(--warning);" title="Precio no definido">No definido</span>`;
+        }
+      }
+      else if (col.key === "CostoTotal") {
+        if (value !== null && value !== "" && !isNaN(value) && value > 0) {
+          displayValue = `$${fmt(value)}`;
+        } else {
+          displayValue = "-";
+        }
+      }
+      else if (col.key === "Estado") {
+        displayValue = estadoTexto;
+        className = estadoClass;
+      }
+      else if (col.key === "Minimo") {
+        displayValue = (value && value !== "") ? value : "-";
+      }
+      else if (col.key === "Maximo") {
+        displayValue = (value && value !== "") ? value : "-";
+      }
+      else if (value === "" || value === undefined || value === null) {
         displayValue = "-";
-      } else if (col.key === "CostoUnitario" || col.key === "CostoTotal") {
-        displayValue = value !== "" ? `$${fmt(value)}` : "-";
-      } else if (typeof value === "number") {
-        displayValue = fmt(value);
-      } else {
+      }
+      else if (typeof value === "number") {
+        displayValue = Math.floor(value).toLocaleString("en-US");
+      }
+      else {
         displayValue = escapeHtml(String(value));
       }
 
       if (col.key === "Exceso" && r.Exceso > 0) className = "tag-warning";
-      if (col.key === "Estado") className = estadoClass;
+      if (col.key === "PedidoSugerido" && r.PedidoSugerido > 0) className = "tag-danger";
 
-      const isNumeric = ["Inventario", "CostoUnitario", "PedidoSugerido", "CostoTotal", "Exceso"].includes(col.key);
+      const isNumeric = ["Inventario", "CostoUnitario", "PedidoSugerido", "CostoTotal", "Exceso", "Minimo", "Maximo"].includes(col.key);
       const styleAlign = isNumeric ? ' style="text-align: right;"' : '';
 
       return `<td class="${className}"${styleAlign}>${displayValue}</td>`;
@@ -98,9 +235,179 @@ function renderTableDynamic(data, filterType) {
     return `<tr>${cells}</tr>`;
   }).join('');
 
+  // Agregar paginación
+  renderReportPagination(totalPages, totalItems);
+
+  // Event listeners
   tbody.querySelectorAll('.pedido-sugerido-input').forEach(input => {
+    input.removeEventListener('input', handlePedidoSugeridoChange);
     input.addEventListener('input', handlePedidoSugeridoChange);
   });
+
+  tbody.querySelectorAll('[data-remove-sku]').forEach(btn => {
+    btn.removeEventListener('click', handleRemoveProduct);
+    btn.addEventListener('click', handleRemoveProduct);
+  });
+}
+
+// Funcion para renderizar paginación del reporte
+function renderReportPagination(totalPages, totalItems) {
+  // Eliminar paginación anterior si existe
+  const existingPagination = document.getElementById("reportPagination");
+  if (existingPagination) existingPagination.remove();
+  
+  if (totalPages <= 1) return;
+  
+  // Crear contenedor de paginación
+  const paginationDiv = document.createElement("div");
+  paginationDiv.id = "reportPagination";
+  paginationDiv.className = "pagination";
+  paginationDiv.style.marginTop = "16px";
+  paginationDiv.style.display = "flex";
+  paginationDiv.style.gap = "8px";
+  paginationDiv.style.flexWrap = "wrap";
+  paginationDiv.style.alignItems = "center";
+  paginationDiv.style.justifyContent = "center";
+  
+  const currentPage = window.reportPageState.currentPage;
+  
+  // Botón Anterior
+  const prevBtn = document.createElement("button");
+  prevBtn.textContent = "« Anterior";
+  prevBtn.disabled = currentPage <= 1;
+  prevBtn.addEventListener("click", () => {
+    if (currentPage > 1) {
+      window.reportPageState.currentPage--;
+      applyFilterAndSearch();
+    }
+  });
+  paginationDiv.appendChild(prevBtn);
+  
+  // Botones de páginas
+  const maxButtons = 5;
+  let startPage = Math.max(1, currentPage - Math.floor(maxButtons / 2));
+  let endPage = Math.min(totalPages, startPage + maxButtons - 1);
+  
+  if (endPage - startPage + 1 < maxButtons) {
+    startPage = Math.max(1, endPage - maxButtons + 1);
+  }
+  
+  if (startPage > 1) {
+    const firstBtn = document.createElement("button");
+    firstBtn.textContent = "1";
+    firstBtn.addEventListener("click", () => {
+      window.reportPageState.currentPage = 1;
+      applyFilterAndSearch();
+    });
+    paginationDiv.appendChild(firstBtn);
+    
+    if (startPage > 2) {
+      const ellipsis = document.createElement("span");
+      ellipsis.textContent = "...";
+      ellipsis.style.padding = "0 4px";
+      paginationDiv.appendChild(ellipsis);
+    }
+  }
+  
+  for (let i = startPage; i <= endPage; i++) {
+    const pageBtn = document.createElement("button");
+    pageBtn.textContent = i;
+    if (i === currentPage) {
+      pageBtn.disabled = true;
+      pageBtn.style.backgroundColor = "var(--primary)";
+      pageBtn.style.color = "white";
+    } else {
+      pageBtn.addEventListener("click", () => {
+        window.reportPageState.currentPage = i;
+        applyFilterAndSearch();
+      });
+    }
+    paginationDiv.appendChild(pageBtn);
+  }
+  
+  if (endPage < totalPages) {
+    if (endPage < totalPages - 1) {
+      const ellipsis = document.createElement("span");
+      ellipsis.textContent = "...";
+      ellipsis.style.padding = "0 4px";
+      paginationDiv.appendChild(ellipsis);
+    }
+    const lastBtn = document.createElement("button");
+    lastBtn.textContent = totalPages;
+    lastBtn.addEventListener("click", () => {
+      window.reportPageState.currentPage = totalPages;
+      applyFilterAndSearch();
+    });
+    paginationDiv.appendChild(lastBtn);
+  }
+  
+  // Botón Siguiente
+  const nextBtn = document.createElement("button");
+  nextBtn.textContent = "Siguiente »";
+  nextBtn.disabled = currentPage >= totalPages;
+  nextBtn.addEventListener("click", () => {
+    if (currentPage < totalPages) {
+      window.reportPageState.currentPage++;
+      applyFilterAndSearch();
+    }
+  });
+  paginationDiv.appendChild(nextBtn);
+  
+  // Información de páginas
+  const pageInfo = document.createElement("span");
+  pageInfo.className = "page-info";
+  pageInfo.textContent = `Página ${currentPage} de ${totalPages} — ${totalItems} productos`;
+  paginationDiv.appendChild(pageInfo);
+  
+  // Insertar después de la tabla
+  const tableContainer = document.querySelector("#resultTable").parentNode;
+  tableContainer.appendChild(paginationDiv);
+}
+
+// Resetear paginación cuando cambia el filtro
+function resetReportPagination() {
+  window.reportPageState.currentPage = 1;
+}
+
+// Funcion para ordenar la tabla
+function sortTable(columnKey) {
+  if (window.sortState.column === columnKey) {
+    window.sortState.direction = window.sortState.direction === 'desc' ? 'asc' : 'desc';
+  } else {
+    window.sortState.column = columnKey;
+    window.sortState.direction = 'desc';
+  }
+  resetReportPagination();
+  applyFilterAndSearch();
+}
+
+// Funcion para mostrar tooltip con Min y Max
+function showMinMaxInfo(sku) {
+  const product = state.rows.find(r => r.SKU === sku);
+  if (product) {
+    const minVal = product.Minimo && product.Minimo !== "" ? product.Minimo : "No definido";
+    const maxVal = product.Maximo && product.Maximo !== "" ? product.Maximo : "No definido";
+    const precio = product.CostoUnitario ? `$${product.CostoUnitario}` : "No definido";
+    
+    mostrarNotificacion(
+      `${product.SKU}\n${product.Producto}\nMinimo: ${minVal}\nMaximo: ${maxVal}\nPrecio: ${precio}\nInventario: ${product.Inventario}`,
+      false
+    );
+  }
+}
+
+function handleRemoveProduct(event) {
+  const btn = event.currentTarget;
+  const targetSku = btn.getAttribute('data-remove-sku');
+  if (!targetSku) return;
+  
+  if (confirm(`Eliminar "${targetSku}" de la lista?`)) {
+    state.rows = state.rows.filter(item => item.SKU !== targetSku);
+    if (typeof updateMetrics === "function") updateMetrics(state.rows);
+    resetReportPagination();
+    applyFilterAndSearch();
+    setStatus(`Producto ${targetSku} eliminado`, false);
+  }
 }
 
 function handlePedidoSugeridoChange(event) {
@@ -113,7 +420,7 @@ function handlePedidoSugeridoChange(event) {
   if (!row) return;
 
   row.PedidoSugerido = Math.max(0, Math.ceil(value));
-  row.CostoTotal = row.CostoUnitario !== '' ? row.PedidoSugerido * row.CostoUnitario : "";
+  row.CostoTotal = (row.CostoUnitario && row.CostoUnitario !== null) ? row.PedidoSugerido * row.CostoUnitario : "";
 
   if (row.PedidoSugerido > 0) {
     row.Estado = 'PEDIR';
@@ -129,114 +436,374 @@ function handlePedidoSugeridoChange(event) {
   applyFilterAndSearch();
 }
 
+// ============================================================
+// SECCION 2: FILTROS Y BUSQUEDA
+// ============================================================
+
 function applyFilterAndSearch() {
   const searchTerm = norm(document.getElementById("searchInput")?.value || "");
+  const presFilter = document.getElementById("filterPresentation")?.value || "all";
+  
   let filtered = [...state.rows];
+  const currentFilter = String(state.activeFilter || "todos").toLowerCase();
 
-  if (state.activeFilter === "pedido") {
+  if (currentFilter === "pedido" || currentFilter === "pedir") {
     filtered = filtered.filter(r => r.PedidoSugerido > 0);
-  } else if (state.activeFilter === "exceso") {
+  } else if (currentFilter === "exceso") {
     filtered = filtered.filter(r => r.Exceso > 0);
-  } else if (state.activeFilter === "ok") {
+  } else if (currentFilter === "ok") {
     filtered = filtered.filter(r => r.PedidoSugerido === 0 && r.Exceso === 0 && r.Estado !== "SIN REGLAS");
+  } else if (currentFilter === "zero") {
+    filtered = filtered.filter(r => r.Inventario === 0);
   }
 
   if (searchTerm) {
     filtered = filtered.filter(r => norm(r.SKU).includes(searchTerm) || norm(r.Producto).includes(searchTerm));
   }
 
+  if (presFilter !== "all") {
+    filtered = filtered.filter(r => {
+      const skuLower = String(r.SKU || "").toLowerCase().trim();
+      if (presFilter === "gal") return skuLower.endsWith("-1");
+      if (presFilter === "cub") return skuLower.endsWith("-5");
+      if (presFilter === "1/4") return skuLower.endsWith("-1/4");
+      if (presFilter === "bot") return skuLower.endsWith("-bot");
+      return true;
+    });
+  }
+
   state.filtered = filtered;
-  renderTableDynamic(filtered, state.activeFilter || "todos");
+  renderTableDynamic(filtered, currentFilter);
 
   const filterInfo = document.getElementById("filterInfo");
   if (filterInfo) {
     let filterText = "";
-    if (state.activeFilter === "all" || state.activeFilter === "todos") filterText = "Mostrando todos los productos";
-    else if (state.activeFilter === "pedido") filterText = `📦 Mostrando productos con pedido (${filtered.length} de ${state.rows.length})`;
-    else if (state.activeFilter === "exceso") filterText = `⚠️ Mostrando productos en exceso (${filtered.length} de ${state.rows.length})`;
-    else if (state.activeFilter === "ok") filterText = `✅ Mostrando productos dentro del rango óptimo (${filtered.length} de ${state.rows.length})`;
+    if (currentFilter === "all" || currentFilter === "todos") filterText = "Mostrando todos los productos";
+    else if (currentFilter === "pedido" || currentFilter === "pedir") filterText = `Mostrando productos con pedido (${filtered.length} de ${state.rows.length})`;
+    else if (currentFilter === "exceso") filterText = `Mostrando productos en exceso (${filtered.length} de ${state.rows.length})`;
+    else if (currentFilter === "ok") filterText = `Mostrando productos dentro del rango (${filtered.length} de ${state.rows.length})`;
+    else if (currentFilter === "zero") filterText = `Mostrando productos sin stock (${filtered.length} de ${state.rows.length})`;
     filterInfo.textContent = filterText;
   }
 }
 
-/**
- * =========================================================================
- * 🔒 SECCIÓN 2: INTERFAZ DE USUARIO DEL MÓDULO ADMINISTRATIVO (ADMIN UI)
- * =========================================================================
- */
+function autoSwitchToPedidoFilter() {
+  if (!state.rows || state.rows.length === 0) return;
+  
+  state.activeFilter = "pedido";
+  
+  const chips = document.querySelectorAll(".filter-chip");
+  chips.forEach(chip => {
+    if (chip.getAttribute("data-filter") === "pedido") {
+      chip.classList.add("active");
+    } else {
+      chip.classList.remove("active");
+    }
+  });
+  
+  resetReportPagination();
+  applyFilterAndSearch();
+  console.log("Filtro cambiado automaticamente a pedido");
+}
 
-/**
- * Modifica la visibilidad de las capas del panel de administración según el estado del candado.
- */
-function updateAdminLockUI() {
-  const lockDiv = document.querySelector(".admin-lock");
-  const content = document.getElementById("adminContent");
-  const statusSpan = document.getElementById("adminLockStatus");
+function initPresentationFilter() {
+  const searchInput = document.getElementById("searchInput");
+  if (!searchInput) return;
+
+  let presSelect = document.getElementById("filterPresentation");
+  if (!presSelect) {
+    presSelect = document.createElement("select");
+    presSelect.id = "filterPresentation";
+    presSelect.style.cssText = `
+      width: auto;
+      height: 38px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      vertical-align: middle;
+      margin-left: 10px;
+      cursor: pointer;
+    `;
+    
+    presSelect.innerHTML = `
+      <option value="all">Presentacion: Todas</option>
+      <option value="gal">Galon (Gal)</option>
+      <option value="cub">Cubeta (Cub)</option>
+      <option value="1/4">1/4 de Galon (1/4)</option>
+      <option value="bot">Botella (Bot)</option>
+    `;
+
+    searchInput.parentNode.insertBefore(presSelect, searchInput.nextSibling);
+    searchInput.oninput = function() { 
+      resetReportPagination();
+      applyFilterAndSearch(); 
+    };
+    presSelect.onchange = function() { 
+      resetReportPagination();
+      applyFilterAndSearch(); 
+    };
+  }
   
-  if (lockDiv) lockDiv.classList.toggle("hidden", state.adminUnlocked);
-  if (content) content.classList.toggle("hidden", !state.adminUnlocked);
+  function updateSelectStyle() {
+    const isDark = document.body.classList.contains('dark');
+    if (isDark) {
+      presSelect.style.backgroundColor = '#1f2937';
+      presSelect.style.color = '#eef2ff';
+      presSelect.style.borderColor = '#2d3748';
+      presSelect.style.border = '1px solid #2d3748';
+    } else {
+      presSelect.style.backgroundColor = '#ffffff';
+      presSelect.style.color = '#15233b';
+      presSelect.style.borderColor = '#d8e0ef';
+      presSelect.style.border = '1px solid #d8e0ef';
+    }
+  }
   
-  if (statusSpan) {
-    statusSpan.textContent = state.adminUnlocked ? "✅ Panel desbloqueado" : "🔒 Panel bloqueado";
-    statusSpan.style.color = state.adminUnlocked ? "var(--ok)" : "var(--muted)";
+  updateSelectStyle();
+  
+  const observer = new MutationObserver(function(mutations) {
+    mutations.forEach(function(mutation) {
+      if (mutation.attributeName === 'class') {
+        updateSelectStyle();
+      }
+    });
+  });
+  observer.observe(document.body, { attributes: true });
+}
+
+// ============================================================
+// SECCION 3: MODAL PARA AGREGAR PRODUCTO
+// ============================================================
+
+let selectedProductForOrder = null;
+
+function openAddProductModal() {
+  const modal = document.getElementById("modalAddProduct");
+  const searchInput = document.getElementById("searchProductInput");
+  const resultsDiv = document.getElementById("searchResults");
+  const cantidadInput = document.getElementById("manualPedidoCantidad");
+  const confirmBtn = document.getElementById("btnConfirmAddProduct");
+  
+  if (!modal) return;
+  
+  if (searchInput) searchInput.value = "";
+  if (resultsDiv) {
+    resultsDiv.innerHTML = "";
+    resultsDiv.style.display = "none";
+  }
+  if (cantidadInput) cantidadInput.value = "1";
+  selectedProductForOrder = null;
+  if (confirmBtn) confirmBtn.disabled = true;
+  
+  modal.style.display = "flex";
+  setTimeout(() => searchInput?.focus(), 100);
+}
+
+function closeAddProductModal() {
+  const modal = document.getElementById("modalAddProduct");
+  if (modal) modal.style.display = "none";
+  selectedProductForOrder = null;
+}
+
+function searchProductsInListaCompleta(searchTerm) {
+  if (!searchTerm || searchTerm.length < 2) return [];
+  
+  const term = searchTerm.toLowerCase().trim();
+  const results = state.listaCompleta.filter(item => {
+    const codigo = (item.CODIGO || "").toLowerCase();
+    const descripcion = (item.DESCRIPCION || "").toLowerCase();
+    return codigo.includes(term) || descripcion.includes(term);
+  });
+  
+  return results.slice(0, 20);
+}
+
+function renderSearchResults(results) {
+  const resultsDiv = document.getElementById("searchResults");
+  if (!resultsDiv) return;
+  
+  if (!results.length) {
+    resultsDiv.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--muted);">No se encontraron productos</div>';
+    resultsDiv.style.display = "block";
+    return;
+  }
+  
+  resultsDiv.innerHTML = results.map(item => `
+    <div class="search-result-item" data-sku="${escapeHtml(item.CODIGO)}" data-name="${escapeHtml(item.DESCRIPCION)}" data-price="${item.PRECIO}">
+      <div class="search-result-sku">${escapeHtml(item.CODIGO)}</div>
+      <div class="search-result-name">${escapeHtml(item.DESCRIPCION)}</div>
+      <div class="search-result-price">$${fmt(item.PRECIO)}</div>
+    </div>
+  `).join('');
+  
+  resultsDiv.querySelectorAll('.search-result-item').forEach(el => {
+    el.addEventListener('click', () => {
+      resultsDiv.querySelectorAll('.search-result-item').forEach(r => r.classList.remove('selected'));
+      el.classList.add('selected');
+      
+      selectedProductForOrder = {
+        SKU: el.getAttribute('data-sku'),
+        Producto: el.getAttribute('data-name'),
+        CostoUnitario: parseFloat(el.getAttribute('data-price'))
+      };
+      
+      const confirmBtn = document.getElementById("btnConfirmAddProduct");
+      if (confirmBtn) confirmBtn.disabled = false;
+    });
+  });
+  
+  resultsDiv.style.display = "block";
+}
+
+function addProductToPedido() {
+  if (!selectedProductForOrder) {
+    setStatus("Selecciona un producto primero.", true);
+    return;
+  }
+  
+  const cantidadInput = document.getElementById("manualPedidoCantidad");
+  const cantidad = parseInt(cantidadInput?.value, 10);
+  if (isNaN(cantidad) || cantidad < 1) {
+    setStatus("Ingresa una cantidad valida (minimo 1).", true);
+    return;
+  }
+  
+  const sku = selectedProductForOrder.SKU;
+  const precio = selectedProductForOrder.CostoUnitario;
+  const producto = selectedProductForOrder.Producto;
+  
+  const existingRow = state.rows.find(r => r.SKU === sku);
+  
+  if (existingRow) {
+    existingRow.PedidoSugerido = cantidad;
+    existingRow.CostoTotal = precio * cantidad;
+    existingRow.Estado = "PEDIR";
+    setStatus(`Actualizado: ${sku} - ${cantidad} unidades`, false);
+  } else {
+    const newRow = {
+      SKU: sku,
+      Producto: producto,
+      Inventario: 0,
+      CostoUnitario: precio,
+      Minimo: "",
+      Maximo: "",
+      ConsumoMensual: 0,
+      PedidoSugerido: cantidad,
+      CostoTotal: precio * cantidad,
+      Exceso: 0,
+      Estado: "PEDIR"
+    };
+    state.rows.push(newRow);
+    setStatus(`Agregado: ${sku} - ${cantidad} unidades`, false);
+  }
+  
+  state.activeFilter = "pedido";
+  const chips = document.querySelectorAll(".filter-chip");
+  chips.forEach(chip => {
+    if (chip.getAttribute("data-filter") === "pedido") {
+      chip.classList.add("active");
+    } else {
+      chip.classList.remove("active");
+    }
+  });
+  
+  resetReportPagination();
+  updateMetrics(state.rows);
+  applyFilterAndSearch();
+  closeAddProductModal();
+  if (typeof updateExportButtonState === "function") updateExportButtonState();
+}
+
+function initManualProductModal() {
+  const addBtn = document.getElementById("btnAddProductToOrder");
+  const closeBtn = document.getElementById("btnCloseModal");
+  const confirmBtn = document.getElementById("btnConfirmAddProduct");
+  const searchInput = document.getElementById("searchProductInput");
+  const modal = document.getElementById("modalAddProduct");
+  
+  if (!addBtn) return;
+  
+  addBtn.addEventListener("click", openAddProductModal);
+  if (closeBtn) closeBtn.addEventListener("click", closeAddProductModal);
+  if (confirmBtn) confirmBtn.addEventListener("click", addProductToPedido);
+  
+  let searchTimeout;
+  if (searchInput) {
+    searchInput.addEventListener("input", (e) => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => {
+        const results = searchProductsInListaCompleta(e.target.value);
+        renderSearchResults(results);
+      }, 300);
+    });
+  }
+  
+  if (modal) {
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) closeAddProductModal();
+    });
+  }
+  
+  const cantidadInput = document.getElementById("manualPedidoCantidad");
+  if (cantidadInput) {
+    cantidadInput.addEventListener("keypress", (e) => {
+      if (e.key === "Enter" && confirmBtn && !confirmBtn.disabled) addProductToPedido();
+    });
   }
 }
 
-/**
- * Renderiza el cuerpo de la tabla del panel de control de administración.
- */
+// ============================================================
+// SECCION 4: ADMINISTRACION (TABLA DE REGLAS)
+// ============================================================
+
 function renderAdminTable(data) {
   const tbody = document.querySelector("#adminTable tbody");
   if (!tbody) return;
   tbody.innerHTML = "";
   
   if (data.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px;">📭 No hay SKUs registrados</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px;">No hay SKUs registrados</td></tr>';
     return;
   }
   
   data.forEach(r => {
     const tr = document.createElement("tr");
+    // Mostrar el nombre del producto si existe, si no mostrar "Sin nombre"
+    const nombreProducto = r.Producto && r.Producto !== "" ? r.Producto : "Sin nombre";
     tr.innerHTML = `
       <td>${escapeHtml(r.SKU)}</td>
-      <td>${escapeHtml(r.Producto)}</td>
+      <td>${escapeHtml(nombreProducto)}</td>
       <td><input type="number" min="0" step="1" data-role="min" data-sku="${escapeHtml(r.SKU)}" value="${escapeHtml(r.Minimo)}" style="width:90px;"></td>
       <td><input type="number" min="0" step="1" data-role="max" data-sku="${escapeHtml(r.SKU)}" value="${escapeHtml(r.Maximo)}" style="width:90px;"></td>
-      <td><button class="btn-secondary" style="background:var(--danger); color:white; padding:4px 8px;" data-delete-sku="${escapeHtml(r.SKU)}">🗑️</button></td>
+      <td><button class="btn-secondary" style="background:var(--danger); color:white; padding:4px 8px;" data-delete-sku="${escapeHtml(r.SKU)}">🗑</button></td>
     `;
     tbody.appendChild(tr);
   });
 
-  // Escuchas para los botones individuales de eliminación de reglas
   document.querySelectorAll('[data-delete-sku]').forEach(btn => {
     btn.addEventListener('click', () => {
       const sku = btn.getAttribute('data-delete-sku');
-      if (confirm(`¿Eliminar reglas para el SKU "${sku}"?`)) {
+      if (confirm(`Eliminar reglas para el SKU "${sku}"?`)) {
         delete state.adminRules[sku];
         persistRules();
         recalculateRows();
         applyAdminFilter();
-        setStatus(`✅ Reglas eliminadas para ${sku}`);
+        updateReglasStatusDisplay();
+        setStatus(`Reglas eliminadas para ${sku}`);
       }
     });
   });
 }
-
-/**
- * Construye e inyecta los elementos del paginador del área administrativa.
- */
 function renderAdminPagination(currentPage, totalPages, totalItems) {
   const paginationEl = document.getElementById('adminPagination');
   if (!paginationEl) return;
   paginationEl.innerHTML = '';
   
   if (totalPages <= 1) {
-    paginationEl.textContent = totalItems ? `Página ${currentPage} de ${totalPages} — ${totalItems} SKUs` : '';
+    paginationEl.textContent = totalItems ? `Pagina ${currentPage} de ${totalPages} — ${totalItems} SKUs` : '';
     return;
   }
 
   const prevBtn = document.createElement('button');
-  prevBtn.type = 'button';
   prevBtn.textContent = '« Anterior';
   prevBtn.disabled = currentPage <= 1;
   prevBtn.addEventListener('click', () => {
@@ -245,7 +812,6 @@ function renderAdminPagination(currentPage, totalPages, totalItems) {
   });
 
   const nextBtn = document.createElement('button');
-  nextBtn.type = 'button';
   nextBtn.textContent = 'Siguiente »';
   nextBtn.disabled = currentPage >= totalPages;
   nextBtn.addEventListener('click', () => {
@@ -255,11 +821,10 @@ function renderAdminPagination(currentPage, totalPages, totalItems) {
 
   const pageInfo = document.createElement('span');
   pageInfo.className = 'page-info';
-  pageInfo.textContent = `Página ${currentPage} de ${totalPages} — ${totalItems} SKUs`;
+  pageInfo.textContent = `Pagina ${currentPage} de ${totalPages} — ${totalItems} SKUs`;
 
   function createPageButton(page) {
     const btn = document.createElement('button');
-    btn.type = 'button';
     btn.textContent = page;
     btn.disabled = page === currentPage;
     if (page !== currentPage) {
@@ -292,3 +857,9 @@ function renderAdminPagination(currentPage, totalPages, totalItems) {
   paginationEl.appendChild(nextBtn);
   paginationEl.appendChild(pageInfo);
 }
+
+// ============================================================
+// SECCION 5: INICIALIZACION
+// ============================================================
+
+setTimeout(initPresentationFilter, 400);
