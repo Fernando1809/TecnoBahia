@@ -67,20 +67,12 @@ function computeRow(sku, producto, inventario, map) {
   // Calcular pedido sugerido
   let pedidoSugerido = 0;
   
+  // 🔥 SOLO si tiene reglas completas (Mín y Máx) - así lo pediste
   if (hasMin && hasMax) {
-    // Si tiene reglas completas
     if (stockActual < minimo) {
       pedidoSugerido = maximo - stockActual;
       if (pedidoSugerido < 0) pedidoSugerido = 0;
     }
-  } else if (hasMin && !hasMax) {
-    // Solo tiene mínimo
-    if (stockActual < minimo) {
-      pedidoSugerido = minimo - stockActual;
-    }
-  } else if (!hasMin && !hasMax && stockActual === 0) {
-    // Si no tiene reglas pero está en 0, sugerir pedido de 1
-    pedidoSugerido = 1;
   }
 
   const exceso = (hasMax && stockActual > maximo) ? (stockActual - maximo) : 0;
@@ -96,12 +88,14 @@ function computeRow(sku, producto, inventario, map) {
 
   // Determinar estado
   let estado = "SIN REGLAS";
-  if (hasMin || hasMax) {
+  if (hasMin && hasMax) {
     if (pedidoSugerido > 0) estado = "PEDIR";
     else if (exceso > 0) estado = "EXCESO";
     else estado = "OK";
-  } else if (stockActual === 0 && pedidoSugerido > 0) {
-    estado = "PEDIR";
+  } else if (hasMin && !hasMax) {
+    estado = "SOLO MINIMO";
+  } else if (!hasMin && hasMax) {
+    estado = "SOLO MAXIMO";
   }
 
   return {
@@ -118,31 +112,67 @@ function computeRow(sku, producto, inventario, map) {
     Estado: estado
   };
 }
+
 function recalculateRows() {
-  if (!state.rawJson || !state.rawJson.length || !state.columnMap) return;
-  
-  const map = state.columnMap;
+  // Primero, procesar productos del inventario
   const agrupar = {};
+  
+  if (state.rawJson && state.rawJson.length && state.columnMap) {
+    const map = state.columnMap;
+    
+    state.rawJson.forEach(r => {
+      const sku = String(r[map.SKU] || '').trim();
+      if (!sku || sku === "Código" || sku.includes("---")) return;
 
-  state.rawJson.forEach(r => {
-    const sku = String(r[map.SKU] || '').trim();
-    if (!sku || sku === "Código" || sku.includes("---")) return;
+      const producto = String(r[map.Producto] || '').trim();
+      const inventario = toNumOrNull(r[map.Inventario]) || 0;
 
-    const producto = String(r[map.Producto] || '').trim();
-    const inventario = toNumOrNull(r[map.Inventario]) || 0;
-
-    if (!agrupar[sku]) {
-      agrupar[sku] = {
-        sku: sku,
-        producto: producto,
-        inventario: 0
-      };
-    }
-    agrupar[sku].inventario += inventario;
-  });
-
+      if (!agrupar[sku]) {
+        agrupar[sku] = {
+          sku: sku,
+          producto: producto,
+          inventario: 0
+        };
+      }
+      agrupar[sku].inventario += inventario;
+    });
+  }
+  
+  // 🔥 Agregar productos que tienen reglas COMPLETAS (Mín y Máx) pero NO están en el inventario
+  if (state.adminRules && Object.keys(state.adminRules).length > 0) {
+    Object.keys(state.adminRules).forEach(sku => {
+      const regla = state.adminRules[sku];
+      const hasMin = (regla.minimo !== undefined && regla.minimo !== "" && regla.minimo !== null);
+      const hasMax = (regla.maximo !== undefined && regla.maximo !== "" && regla.maximo !== null);
+      
+      // Solo agregar si tiene AMBOS (Mínimo y Máximo)
+      if (hasMin && hasMax) {
+        // Si el SKU no está en el inventario (no se encontró en agrupar)
+        if (!agrupar[sku]) {
+          // Obtener nombre del producto desde adminRules o listaCompleta
+          let producto = state.adminRules[sku]?.producto || "";
+          
+          // Buscar en listaCompleta si no tiene nombre
+          if (!producto && state.listaCompleta) {
+            const found = state.listaCompleta.find(item => item.CODIGO === sku);
+            if (found) producto = found.DESCRIPCION;
+          }
+          
+          // Agregar con inventario 0
+          agrupar[sku] = {
+            sku: sku,
+            producto: producto || "Sin nombre",
+            inventario: 0
+          };
+          console.log(`📦 Producto con reglas Mín/Máx sin inventario: ${sku} - inventario: 0, Máximo: ${regla.maximo}`);
+        }
+      }
+    });
+  }
+  
+  // Calcular las reglas para todos los productos
   state.rows = Object.values(agrupar).map(item => {
-    return computeRow(item.sku, item.producto, item.inventario, map);
+    return computeRow(item.sku, item.producto, item.inventario, state.columnMap || {});
   });
   
   updateMetrics(state.rows);
@@ -151,15 +181,16 @@ function recalculateRows() {
     applyFilterAndSearch();
   }
   
-  // 🔥 Actualizar botón de exportación después de recalcular
+  // Actualizar botón de exportación
   if (typeof updateExportButtonState === "function") {
     updateExportButtonState();
-    console.log("🔘 Botón actualizado después de recalculateRows, productos con pedido:", state.rows.filter(r => r.PedidoSugerido > 0).length);
+    console.log("🔘 Botón actualizado, productos con pedido:", state.rows.filter(r => r.PedidoSugerido > 0).length);
   }
 }
 
 function updateMetrics(rows) {
   const total = rows.length;
+  // Contar productos con pedido sugerido > 0
   const conPedido = rows.filter(r => r.PedidoSugerido > 0).length;
   const conExceso = rows.filter(r => r.Exceso > 0).length;
   

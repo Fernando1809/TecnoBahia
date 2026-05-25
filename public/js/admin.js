@@ -1020,3 +1020,51 @@ function arrayBufferToBase64(buffer) {
     reader.readAsDataURL(blob);
   });
 }
+// ============================================================
+// DESCARGA DE PLANTILLA KOLO PARA MÍNIMOS Y MÁXIMOS
+// ============================================================
+
+function downloadKOLOTemplate() {
+  // Crear datos de ejemplo para la plantilla
+  const templateData = [
+    { SKU: "A24W451-1", Minimo: 10, Maximo: 50 },
+    { SKU: "A24W451-5", Minimo: 5, Maximo: 25 },
+    { SKU: "A24W453-1", Minimo: 8, Maximo: 40 },
+    { SKU: "A24W453-5", Minimo: 4, Maximo: 20 },
+    { SKU: "A24T454-1", Minimo: 6, Maximo: 30 }
+  ];
+  
+  // Crear libro de trabajo
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(templateData);
+  
+  // Ajustar anchos de columnas
+  ws['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 12 }];
+  
+  // Agregar hoja de instrucciones
+  const instrucciones = [
+    ["INSTRUCCIONES PARA CARGA MASIVA EN KOLO"],
+    [""],
+    ["1. Complete los campos SKU, Minimo y Maximo para cada producto"],
+    ["2. El SKU debe coincidir exactamente con el código de su producto en KOLO"],
+    ["3. Minimo: Stock mínimo antes de generar pedido"],
+    ["4. Maximo: Stock máximo deseado (se sugiere pedir hasta alcanzar este nivel)"],
+    ["5. Guarde el archivo y súbalo en KOLO en la sección de carga masiva"],
+    [""],
+    ["FECHA DE DESCARGA:", new Date().toLocaleString('es-ES')]
+  ];
+  
+  const wsInstrucciones = XLSX.utils.aoa_to_sheet(instrucciones);
+  wsInstrucciones['!cols'] = [{ wch: 60 }];
+  
+  XLSX.utils.book_append_sheet(wb, ws, "MIN_MAX_KOLO");
+  XLSX.utils.book_append_sheet(wb, wsInstrucciones, "INSTRUCCIONES");
+  
+  // Descargar archivo
+  const fecha = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, `plantilla_kolo_min_max_${fecha}.xlsx`);
+  
+  if (typeof setStatus === "function") {
+    setStatus("📥 Plantilla KOLO descargada. Completa los campos y súbela en KOLO.", false);
+  }
+}

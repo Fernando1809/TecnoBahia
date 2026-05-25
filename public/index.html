@@ -46,83 +46,74 @@
       </div>
     </div>
 
-<div id="viewReport" class="hidden">
-  <div class="card">
-    <h1>Auxiliar de Inventario y Pedidos</h1>
-    <p>Sube el Excel de inventario — el sistema calculará el pedido y el exceso de inventario automáticamente.</p>
-    <div class="row">
-      <input type="file" id="fileInput" accept=".xlsx,.xls" />
-    </div>
-    
-    <!-- Botones juntos: Descargar Pedido e Ir a KOLO -->
-    <div class="row" style="margin-top: 12px;">
-      <button id="btnExport" disabled style="flex: 1;">📥 Descargar Pedido</button>
-      <a href="https://empresas.kolo-app.com/distribucion/inventario" target="_blank" rel="noopener noreferrer" class="btn-secondary" style="flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; background: var(--primary); color: white; padding: 10px 16px; border-radius: 8px; text-align: center;">
-        🏢 Ir a KOLO
-      </a>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>📈 Indicadores clave</h2>
-    <div class="row" id="metricsRow">
-      <div class="metric"><span>SKUs totales</span><strong id="mTotal">0</strong></div>
-      <div class="metric"><span>Con pedido</span><strong id="mPedido">0</strong></div>
-      <div class="metric"><span>Con exceso</span><strong id="mExceso">0</strong></div>
-      <div class="metric"><span>Total</span><strong id="mCantPedido">0</strong></div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="filter-row">
-      <h2 style="margin:0;">📋 Resultados detallados</h2>
-      <div class="filter-buttons">
-        <div class="filter-chip" data-filter="all">📊 Todos</div>
-        <div class="filter-chip" data-filter="pedido">🛒 En mínimo (pedir)</div>
-        <div class="filter-chip" data-filter="exceso">⚠️ En exceso</div>
-        <div class="filter-chip" data-filter="ok">✅ OK (dentro rango)</div>
-        <div class="filter-chip" data-filter="zero">📭 Sin stock (0)</div>
-      </div>
-    </div>
-    <div class="row filters">
-      <input type="text" id="searchInput" placeholder="🔍 Buscar SKU o producto..." />
-    </div>
-    
-    <!-- Botón para agregar producto manual -->
-    <div class="row" style="margin: 12px 0;">
-      <button id="btnAddProductToOrder" class="btn-secondary" style="background: var(--primary); color: white;">➕ Agregar producto a pedido</button>
-    </div>
-
-    <!-- Modal para agregar producto -->
-    <div id="modalAddProduct" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; justify-content: center; align-items: center;">
-      <div style="background: var(--card); border-radius: 12px; padding: 24px; width: 90%; max-width: 450px; box-shadow: 0 20px 40px rgba(0,0,0,0.3);">
-        <h3 style="margin: 0 0 16px 0;">➕ Agregar producto al pedido</h3>
-        <div style="margin-bottom: 16px;">
-          <label style="display: block; margin-bottom: 6px; font-weight: 500;">🔍 Buscar por SKU o nombre:</label>
-          <input type="text" id="searchProductInput" placeholder="Ej: A24W451-1 o LOXON XP..." style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px;" />
+    <div id="viewReport" class="hidden">
+      <div class="card">
+        <h1>Auxiliar de Inventario y Pedidos</h1>
+        <p>Sube el Excel de inventario — el sistema calculará el pedido y el exceso de inventario automáticamente.</p>
+        <div class="row">
+          <input type="file" id="fileInput" accept=".xlsx,.xls" />
         </div>
-        <div id="searchResults" style="max-height: 300px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 16px; display: none;">
-        </div>
-        <div style="margin-bottom: 16px;">
-          <label style="display: block; margin-bottom: 6px; font-weight: 500;">📦 Cantidad a pedir:</label>
-          <input type="number" id="manualPedidoCantidad" min="1" value="1" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px;" />
-        </div>
-        <div style="display: flex; gap: 12px; justify-content: flex-end;">
-          <button id="btnCloseModal" class="btn-secondary">Cancelar</button>
-          <button id="btnConfirmAddProduct" class="btn-secondary" style="background: var(--ok); color: white;" disabled>➕ Agregar al pedido</button>
+        
+        <!-- Botones juntos: Descargar Pedido e Ir a KOLO -->
+        <div class="row" style="margin-top: 12px;">
+          <button id="btnExport" disabled style="flex: 1;">📥 Descargar Pedido</button>
+          <a href="https://empresas.kolo-app.com/distribucion/inventario" target="_blank" rel="noopener noreferrer" class="btn-secondary" style="flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; background: var(--primary); color: white; padding: 10px 16px; border-radius: 8px; text-align: center;">
+            🏢 Ir a KOLO
+          </a>
         </div>
       </div>
-    </div>
-    
-    <div style="overflow:auto;">
-      <table id="resultTable">
-        <thead id="tableHeader"></thead>
-        <tbody id="tableBody"></tbody>
-      </table>
-    </div>
-    <div id="filterInfo" style="font-size:12px; color:var(--muted); margin-top:8px;"></div>
-  </div>
-</div>
+
+      <div class="card">
+        <h2>📈 Indicadores clave</h2>
+        <div class="row" id="metricsRow">
+          <div class="metric"><span>SKUs totales</span><strong id="mTotal">0</strong></div>
+          <div class="metric"><span>Con pedido</span><strong id="mPedido">0</strong></div>
+          <div class="metric"><span>Con exceso</span><strong id="mExceso">0</strong></div>
+          <div class="metric"><span>Total</span><strong id="mCantPedido">0</strong></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="filter-row">
+          <h2 style="margin:0;">📋 Resultados detallados</h2>
+          <div class="filter-buttons">
+            <div class="filter-chip" data-filter="all">📊 Todos</div>
+            <div class="filter-chip" data-filter="pedido">🛒 En mínimo (pedir)</div>
+            <div class="filter-chip" data-filter="exceso">⚠️ En exceso</div>
+            <div class="filter-chip" data-filter="ok">✅ OK (dentro rango)</div>
+            <div class="filter-chip" data-filter="zero">📭 Sin stock (0)</div>
+          </div>
+        </div>
+        <div class="row filters">
+          <input type="text" id="searchInput" placeholder="🔍 Buscar SKU o producto..." />
+        </div>
+        
+        <!-- Botón para agregar producto manual -->
+        <div class="row" style="margin: 12px 0;">
+          <button id="btnAddProductToOrder" class="btn-secondary" style="background: var(--primary); color: white;">➕ Agregar producto a pedido</button>
+        </div>
+
+        <!-- Modal para agregar producto -->
+        <div id="modalAddProduct" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; justify-content: center; align-items: center;">
+          <div style="background: var(--card); border-radius: 12px; padding: 24px; width: 90%; max-width: 450px; box-shadow: 0 20px 40px rgba(0,0,0,0.3);">
+            <h3 style="margin: 0 0 16px 0;">➕ Agregar producto al pedido</h3>
+            <div style="margin-bottom: 16px;">
+              <label style="display: block; margin-bottom: 6px; font-weight: 500;">🔍 Buscar por SKU o nombre:</label>
+              <input type="text" id="searchProductInput" placeholder="Ej: A24W451-1 o LOXON XP..." style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px;" />
+            </div>
+            <div id="searchResults" style="max-height: 300px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 16px; display: none;">
+            </div>
+            <div style="margin-bottom: 16px;">
+              <label style="display: block; margin-bottom: 6px; font-weight: 500;">📦 Cantidad a pedir:</label>
+              <input type="number" id="manualPedidoCantidad" min="1" value="1" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px;" />
+            </div>
+            <div style="display: flex; gap: 12px; justify-content: flex-end;">
+              <button id="btnCloseModal" class="btn-secondary">Cancelar</button>
+              <button id="btnConfirmAddProduct" class="btn-secondary" style="background: var(--ok); color: white;" disabled>➕ Agregar al pedido</button>
+            </div>
+          </div>
+        </div>
+        
         <div style="overflow:auto;">
           <table id="resultTable">
             <thead id="tableHeader"></thead>
@@ -177,17 +168,57 @@
           <!-- REGLAS -->
           <div class="row admin-tools">
             <input type="file" id="adminExcelInput" accept=".xlsx,.xls" />
-            <button id="btnImportExcel" class="btn-secondary">📋 Importar reglas (Mín/Máx)</button>
+            <button id="btnImportExcel" class="btn-secondary">📋 Importar reglas KOLO (Mín/Máx)</button>
             <button id="btnAddSku" class="btn-secondary">➕ Agregar nuevo SKU</button>
           </div>
+
+          <!-- Indicador de reglas cargadas -->
           <div class="hint" id="reglasStatusHint" style="margin-top: 8px;">
-            📋 <strong>Reglas cargadas</strong>: <span id="reglasInfo">No hay reglas cargadas</span>
+            📋 <strong>Reglas KOLO cargadas</strong>: <span id="reglasInfo">No hay reglas cargadas</span>
           </div>
-<div class="hint">
-  📋 <strong>Archivo de reglas (KOLO)</strong>: Define mínimos y máximos por código desde el archivo de KOLO.<br>
-  Columnas requeridas: <strong>SKU</strong> (código), <strong>Minimo</strong> y <strong>Maximo</strong>.<br>
-  🔁 Al importar, los registros se fusionan sin duplicar.
-</div>          
+
+          <div class="hint">
+            📋 <strong>Archivo de reglas (KOLO)</strong>: Define mínimos y máximos por código desde el archivo de KOLO.<br>
+            Columnas requeridas: <strong>SKU</strong> (código), <strong>Minimo</strong> y <strong>Maximo</strong>.<br>
+            🔁 Al importar, los registros se fusionan sin duplicar.
+          </div>
+
+          <!-- Información de carga masiva en KOLO -->
+          <div style="margin-top: 12px; padding: 12px; background: var(--chip-bg); border-radius: 10px; border: 1px solid var(--border);">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 20px;">🏢</span>
+                <div>
+                  <strong style="font-size: 13px;">Cargar Mínimos y Máximos en KOLO</strong>
+                  <p style="margin: 0; font-size: 11px; color: var(--muted);">Accede a KOLO para gestionar tus productos</p>
+                </div>
+              </div>
+              <a href="https://empresas.kolo-app.com/distribucion/inventario" target="_blank" rel="noopener noreferrer" 
+                style="background: var(--primary); color: white; padding: 6px 16px; border-radius: 6px; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; gap: 6px;">
+                🔗 Ir a KOLO
+              </a>
+            </div>
+            <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border);">
+              <div style="display: flex; align-items: center; gap: 6px; cursor: pointer;" id="koloInfoTrigger">
+                <span class="info-icon" style="width: 18px; height: 18px; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; background: var(--primary); color: white; border-radius: 50%;">i</span>
+                <span style="font-size: 12px;">¿Cómo hacer carga masiva en KOLO?</span>
+              </div>
+              <div id="koloInfoPanel" style="display: none; margin-top: 10px; font-size: 12px; line-height: 1.5; background: var(--card); padding: 10px; border-radius: 8px; border: 1px solid var(--border);">
+                <ol style="margin: 0; padding-left: 18px;">
+                  <li>Haz clic en <strong>"Ir a KOLO"</strong> e inicia sesión</li>
+                  <li>Ve a <strong>Inventario / Productos</strong></li>
+                  <li>Busca la opción <strong>"Carga Masiva"</strong> o <strong>"Importar"</strong></li>
+                  <li>Descarga la plantilla desde KOLO</li>
+                  <li>Completa los campos: <strong>SKU</strong>, <strong>Mínimo</strong>, <strong>Máximo</strong></li>
+                  <li>Guarda y sube el archivo en KOLO</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+
+          <hr style="margin: 16px 0; border: none; border-top: 1px solid var(--border);">
+
+          <!-- FILTROS ADMIN -->
           <div class="admin-filters" style="margin-top: 20px;">
             <input type="text" id="adminSearchInput" placeholder="🔍 Buscar SKU o producto..." style="width: 250px;" />
             <div class="admin-filter-chip" data-admin-filter="all">📋 Todos</div>
@@ -296,6 +327,14 @@
     document.getElementById("btnAddProductToOrder")?.addEventListener("click", openAddProductModal);
     document.getElementById("btnCloseModal")?.addEventListener("click", closeAddProductModal);
     document.getElementById("btnConfirmAddProduct")?.addEventListener("click", addProductToPedido);
+    
+    // Toggle para el panel de información de KOLO
+    document.getElementById("koloInfoTrigger")?.addEventListener("click", function() {
+      const panel = document.getElementById("koloInfoPanel");
+      if (panel) {
+        panel.style.display = panel.style.display === "none" ? "block" : "none";
+      }
+    });
 
     document.getElementById("usuarioEmail")?.addEventListener("keypress", (e) => { if (e.key === "Enter") unlockAdminPanel(); });
     document.getElementById("usuarioPass")?.addEventListener("keypress", (e) => { if (e.key === "Enter") unlockAdminPanel(); });

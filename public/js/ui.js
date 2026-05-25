@@ -20,6 +20,17 @@ if (typeof window.reportPageState === 'undefined') {
   };
 }
 
+// Función global para confirmar eliminación (SOLO POR CLIC)
+function confirmDeleteProduct(sku, producto) {
+  if (confirm(`¿Deseas eliminar "${producto}" (${sku}) de la lista de pedido?`)) {
+    state.rows = state.rows.filter(item => item.SKU !== sku);
+    if (typeof updateMetrics === "function") updateMetrics(state.rows);
+    if (typeof resetReportPagination === "function") resetReportPagination();
+    if (typeof applyFilterAndSearch === "function") applyFilterAndSearch();
+    if (typeof setStatus === "function") setStatus(`✅ Producto "${producto}" eliminado`, false);
+  }
+}
+
 function renderTableDynamic(data, filterType) {
   const thead = document.getElementById("tableHeader");
   const tbody = document.getElementById("tableBody");
@@ -99,7 +110,7 @@ function renderTableDynamic(data, filterType) {
   }).join('')}</tr>`;
 
   if (data.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="${columns.length}" style="text-align:center; padding:40px;">No hay productos que coincidan con el filtro seleccionado</td></tr>`;
+    tbody.innerHTML = `<td><td colspan="${columns.length}" style="text-align:center; padding:40px;">No hay productos que coincidan con el filtro seleccionado</td></tr>`;
     document.getElementById("reportPagination")?.remove();
     return;
   }
@@ -167,8 +178,12 @@ function renderTableDynamic(data, filterType) {
       
       if (col.key === "Acciones") {
         return `<td style="text-align: center;">
-                  <button class="btn-delete-row" data-remove-sku="${escapeHtml(r.SKU)}" style="background:none; border:none; cursor:pointer; font-size:1.2em; color: var(--danger);" title="Quitar producto">🗑</button>
-                  </td>`;
+                  <button type="button" class="btn-delete-row" 
+                    style="background:#dc2626; border:none; cursor:pointer; font-size:0.85em; color:white; padding:4px 10px; border-radius:6px;" 
+                    onclick="confirmDeleteProduct('${escapeHtml(r.SKU)}', '${escapeHtml(r.Producto)}')">
+                    🗑 Eliminar
+                  </button>
+                 </td>`;
       }
       
       if (col.key === "Inventario") {
@@ -187,7 +202,9 @@ function renderTableDynamic(data, filterType) {
       }
       else if (col.key === "PedidoSugerido" && r.PedidoSugerido > 0) {
         className = "tag-danger";
-        displayValue = `<input type="number" class="pedido-sugerido-input" data-sku="${escapeHtml(r.SKU)}" value="${Math.max(0, Number(r.PedidoSugerido))}" min="0" style="width:80px; padding:4px; border:1px solid var(--border); border-radius:6px; text-align: center;" />`;
+        displayValue = `<input type="number" class="pedido-sugerido-input" data-sku="${escapeHtml(r.SKU)}" 
+          value="${Math.max(0, Number(r.PedidoSugerido))}" min="0" step="1"
+          style="width:80px; padding:4px; border:1px solid var(--border); border-radius:6px; text-align: center;" />`;
       } 
       else if (col.key === "CostoUnitario") {
         if (value !== null && value !== "" && !isNaN(value) && value > 0) {
@@ -238,27 +255,30 @@ function renderTableDynamic(data, filterType) {
   // Agregar paginación
   renderReportPagination(totalPages, totalItems);
 
-  // Event listeners
+  // Event listeners SOLO para inputs de pedido
   tbody.querySelectorAll('.pedido-sugerido-input').forEach(input => {
     input.removeEventListener('input', handlePedidoSugeridoChange);
     input.addEventListener('input', handlePedidoSugeridoChange);
-  });
-
-  tbody.querySelectorAll('[data-remove-sku]').forEach(btn => {
-    btn.removeEventListener('click', handleRemoveProduct);
-    btn.addEventListener('click', handleRemoveProduct);
+    
+    // Prevenir propagación de eventos de teclado
+    input.addEventListener('keydown', function(e) {
+      e.stopPropagation();
+      // Permitir solo teclas numéricas y de control
+      const allowedKeys = ['Backspace', 'Delete', 'Tab', 'Enter', 'ArrowUp', 'ArrowDown', 'Home', 'End'];
+      if (!allowedKeys.includes(e.key) && !/^[0-9]$/.test(e.key)) {
+        e.preventDefault();
+      }
+    });
   });
 }
 
-// Funcion para renderizar paginación del reporte
+// Función para renderizar paginación del reporte
 function renderReportPagination(totalPages, totalItems) {
-  // Eliminar paginación anterior si existe
   const existingPagination = document.getElementById("reportPagination");
   if (existingPagination) existingPagination.remove();
   
   if (totalPages <= 1) return;
   
-  // Crear contenedor de paginación
   const paginationDiv = document.createElement("div");
   paginationDiv.id = "reportPagination";
   paginationDiv.className = "pagination";
@@ -271,7 +291,6 @@ function renderReportPagination(totalPages, totalItems) {
   
   const currentPage = window.reportPageState.currentPage;
   
-  // Botón Anterior
   const prevBtn = document.createElement("button");
   prevBtn.textContent = "« Anterior";
   prevBtn.disabled = currentPage <= 1;
@@ -283,7 +302,6 @@ function renderReportPagination(totalPages, totalItems) {
   });
   paginationDiv.appendChild(prevBtn);
   
-  // Botones de páginas
   const maxButtons = 5;
   let startPage = Math.max(1, currentPage - Math.floor(maxButtons / 2));
   let endPage = Math.min(totalPages, startPage + maxButtons - 1);
@@ -341,7 +359,6 @@ function renderReportPagination(totalPages, totalItems) {
     paginationDiv.appendChild(lastBtn);
   }
   
-  // Botón Siguiente
   const nextBtn = document.createElement("button");
   nextBtn.textContent = "Siguiente »";
   nextBtn.disabled = currentPage >= totalPages;
@@ -353,13 +370,11 @@ function renderReportPagination(totalPages, totalItems) {
   });
   paginationDiv.appendChild(nextBtn);
   
-  // Información de páginas
   const pageInfo = document.createElement("span");
   pageInfo.className = "page-info";
   pageInfo.textContent = `Página ${currentPage} de ${totalPages} — ${totalItems} productos`;
   paginationDiv.appendChild(pageInfo);
   
-  // Insertar después de la tabla
   const tableContainer = document.querySelector("#resultTable").parentNode;
   tableContainer.appendChild(paginationDiv);
 }
@@ -369,7 +384,7 @@ function resetReportPagination() {
   window.reportPageState.currentPage = 1;
 }
 
-// Funcion para ordenar la tabla
+// Función para ordenar la tabla
 function sortTable(columnKey) {
   if (window.sortState.column === columnKey) {
     window.sortState.direction = window.sortState.direction === 'desc' ? 'asc' : 'desc';
@@ -381,7 +396,7 @@ function sortTable(columnKey) {
   applyFilterAndSearch();
 }
 
-// Funcion para mostrar tooltip con Min y Max
+// Función para mostrar tooltip con Min y Max
 function showMinMaxInfo(sku) {
   const product = state.rows.find(r => r.SKU === sku);
   if (product) {
@@ -390,23 +405,9 @@ function showMinMaxInfo(sku) {
     const precio = product.CostoUnitario ? `$${product.CostoUnitario}` : "No definido";
     
     mostrarNotificacion(
-      `${product.SKU}\n${product.Producto}\nMinimo: ${minVal}\nMaximo: ${maxVal}\nPrecio: ${precio}\nInventario: ${product.Inventario}`,
+      `${product.SKU}\n${product.Producto}\nMínimo: ${minVal}\nMáximo: ${maxVal}\nPrecio: ${precio}\nInventario: ${product.Inventario}`,
       false
     );
-  }
-}
-
-function handleRemoveProduct(event) {
-  const btn = event.currentTarget;
-  const targetSku = btn.getAttribute('data-remove-sku');
-  if (!targetSku) return;
-  
-  if (confirm(`Eliminar "${targetSku}" de la lista?`)) {
-    state.rows = state.rows.filter(item => item.SKU !== targetSku);
-    if (typeof updateMetrics === "function") updateMetrics(state.rows);
-    resetReportPagination();
-    applyFilterAndSearch();
-    setStatus(`Producto ${targetSku} eliminado`, false);
   }
 }
 
@@ -415,12 +416,15 @@ function handlePedidoSugeridoChange(event) {
   const sku = input.getAttribute('data-sku');
   if (!sku) return;
 
-  const value = toNum(input.value);
+  let value = parseInt(input.value, 10);
+  if (isNaN(value)) value = 0;
+  value = Math.max(0, value);
+  
   const row = state.rows.find(r => r.SKU === sku);
   if (!row) return;
 
-  row.PedidoSugerido = Math.max(0, Math.ceil(value));
-  row.CostoTotal = (row.CostoUnitario && row.CostoUnitario !== null) ? row.PedidoSugerido * row.CostoUnitario : "";
+  row.PedidoSugerido = value;
+  row.CostoTotal = (row.CostoUnitario && row.CostoUnitario !== null && row.CostoUnitario > 0) ? row.PedidoSugerido * row.CostoUnitario : "";
 
   if (row.PedidoSugerido > 0) {
     row.Estado = 'PEDIR';
@@ -437,7 +441,7 @@ function handlePedidoSugeridoChange(event) {
 }
 
 // ============================================================
-// SECCION 2: FILTROS Y BUSQUEDA
+// SECCIÓN 2: FILTROS Y BÚSQUEDA
 // ============================================================
 
 function applyFilterAndSearch() {
@@ -503,7 +507,7 @@ function autoSwitchToPedidoFilter() {
   
   resetReportPagination();
   applyFilterAndSearch();
-  console.log("Filtro cambiado automaticamente a pedido");
+  console.log("Filtro cambiado automáticamente a pedido");
 }
 
 function initPresentationFilter() {
@@ -525,10 +529,10 @@ function initPresentationFilter() {
     `;
     
     presSelect.innerHTML = `
-      <option value="all">Presentacion: Todas</option>
-      <option value="gal">Galon (Gal)</option>
+      <option value="all">Presentación: Todas</option>
+      <option value="gal">Galón (Gal)</option>
       <option value="cub">Cubeta (Cub)</option>
-      <option value="1/4">1/4 de Galon (1/4)</option>
+      <option value="1/4">1/4 de Galón (1/4)</option>
       <option value="bot">Botella (Bot)</option>
     `;
 
@@ -571,7 +575,7 @@ function initPresentationFilter() {
 }
 
 // ============================================================
-// SECCION 3: MODAL PARA AGREGAR PRODUCTO
+// SECCIÓN 3: MODAL PARA AGREGAR PRODUCTO
 // ============================================================
 
 let selectedProductForOrder = null;
@@ -663,7 +667,7 @@ function addProductToPedido() {
   const cantidadInput = document.getElementById("manualPedidoCantidad");
   const cantidad = parseInt(cantidadInput?.value, 10);
   if (isNaN(cantidad) || cantidad < 1) {
-    setStatus("Ingresa una cantidad valida (minimo 1).", true);
+    setStatus("Ingresa una cantidad válida (mínimo 1).", true);
     return;
   }
   
@@ -752,7 +756,7 @@ function initManualProductModal() {
 }
 
 // ============================================================
-// SECCION 4: ADMINISTRACION (TABLA DE REGLAS)
+// SECCIÓN 4: ADMINISTRACIÓN (TABLA DE REGLAS)
 // ============================================================
 
 function renderAdminTable(data) {
@@ -767,7 +771,6 @@ function renderAdminTable(data) {
   
   data.forEach(r => {
     const tr = document.createElement("tr");
-    // Mostrar el nombre del producto si existe, si no mostrar "Sin nombre"
     const nombreProducto = r.Producto && r.Producto !== "" ? r.Producto : "Sin nombre";
     tr.innerHTML = `
       <td>${escapeHtml(r.SKU)}</td>
@@ -793,13 +796,14 @@ function renderAdminTable(data) {
     });
   });
 }
+
 function renderAdminPagination(currentPage, totalPages, totalItems) {
   const paginationEl = document.getElementById('adminPagination');
   if (!paginationEl) return;
   paginationEl.innerHTML = '';
   
   if (totalPages <= 1) {
-    paginationEl.textContent = totalItems ? `Pagina ${currentPage} de ${totalPages} — ${totalItems} SKUs` : '';
+    paginationEl.textContent = totalItems ? `Página ${currentPage} de ${totalPages} — ${totalItems} SKUs` : '';
     return;
   }
 
@@ -821,7 +825,7 @@ function renderAdminPagination(currentPage, totalPages, totalItems) {
 
   const pageInfo = document.createElement('span');
   pageInfo.className = 'page-info';
-  pageInfo.textContent = `Pagina ${currentPage} de ${totalPages} — ${totalItems} SKUs`;
+  pageInfo.textContent = `Página ${currentPage} de ${totalPages} — ${totalItems} SKUs`;
 
   function createPageButton(page) {
     const btn = document.createElement('button');
@@ -859,7 +863,7 @@ function renderAdminPagination(currentPage, totalPages, totalItems) {
 }
 
 // ============================================================
-// SECCION 5: INICIALIZACION
+// SECCIÓN 5: INICIALIZACIÓN
 // ============================================================
 
 setTimeout(initPresentationFilter, 400);
