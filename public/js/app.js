@@ -35,29 +35,83 @@ function handleFile(e) {
       
       recalculateRows();
 
-      if (typeof autoSwitchToPedidoFilter === "function") {
-        autoSwitchToPedidoFilter();
-      }
-
+      setTimeout(function() {
+        console.log("🔄 Ejecutando cambio automático a filtro PEDIDO...");
+        
+        if (typeof autoSwitchToPedidoFilter === "function") {
+          console.log("✅ Usando autoSwitchToPedidoFilter");
+          autoSwitchToPedidoFilter();
+        } else {
+          console.warn("⚠️ autoSwitchToPedidoFilter no encontrada, usando método manual mejorado");
+          
+          if (!state.rows || state.rows.length === 0) {
+            console.log("⚠️ No hay datos para cambiar filtro");
+            return;
+          }
+          
+          state.activeFilter = "pedido";
+          console.log("state.activeFilter =", state.activeFilter);
+          
+          const chips = document.querySelectorAll(".filter-chip");
+          let pedidoChip = null;
+          chips.forEach(chip => {
+            if (chip.getAttribute("data-filter") === "pedido") {
+              chip.classList.add("active");
+              pedidoChip = chip;
+            } else {
+              chip.classList.remove("active");
+            }
+          });
+          
+          if (!pedidoChip) {
+            console.warn("No se encontró chip con data-filter='pedido'");
+          }
+          
+          if (typeof resetReportPagination === "function") {
+            resetReportPagination();
+          } else if (window.reportPageState) {
+            window.reportPageState.currentPage = 1;
+          }
+          
+          if (typeof applyFilterAndSearch === "function") {
+            applyFilterAndSearch();
+          }
+          
+          const productosConPedido = state.rows.filter(r => {
+            const hasFullRule = (r.Minimo !== "" && r.Minimo !== undefined && r.Minimo !== null) &&
+                                (r.Maximo !== "" && r.Maximo !== undefined && r.Maximo !== null);
+            const hasPrice = (r.CostoUnitario !== null && r.CostoUnitario !== undefined && r.CostoUnitario > 0);
+            return hasFullRule && hasPrice && r.PedidoSugerido > 0;
+          }).length;
+          
+          if (productosConPedido === 0) {
+            mostrarNotificacion("📊 No hay productos que requieran pedido.\nVerifica precios y reglas.", true);
+          } else {
+            mostrarNotificacion(`📊 Filtro cambiado a "PEDIDO". ${productosConPedido} productos requieren pedido.`, false);
+          }
+          
+          console.log("✅ Método manual completado");
+        }
+      }, 300);
+      
       if (typeof updateExportButtonState === "function") {
         updateExportButtonState();
       }
       
       setStatus(`✅ Inventario cargado con éxito.`, false);
       
-      // 🔥 LIMPIAR EL INPUT para poder cargar el mismo archivo nuevamente
       document.getElementById("fileInput").value = "";
       
     } catch (err) {
       console.error("Error crítico:", err);
       setStatus("Error al procesar el archivo.", true);
-      // También limpiar en caso de error
       document.getElementById("fileInput").value = "";
     }
   };
   
   reader.readAsArrayBuffer(file);
 }
+
 function exportResults() {
   if (!state.rows || !state.rows.length) {
     setStatus("Carga el inventario primero.", true);
@@ -94,7 +148,6 @@ function exportResults() {
 
   const today = new Date();
   
-  // Formatear fecha para el Excel
   wsPedido["D5"] = { t: "d", v: today, z: "dd/mm/yyyy" };
   
   if (state.inventoryOrigin) {
@@ -106,44 +159,40 @@ function exportResults() {
     ["B", "C", "D", "E", "F", "G"].forEach(col => delete wsPedido[`${col}${row}`]);
   }
 
-  // Variables para calcular totales
-  let subtotal = 0;
-  let iva = 0;
-  let total = 0;
+  let subtotalSinIva = 0;
 
-  // Llenar con productos a pedir
+  // Llenar productos
   for (let idx = 0; idx < productsToOrder.length; idx++) {
     const rowNumber = 8 + idx;
     const item = productsToOrder[idx];
     const lookupKey = item.SKU ? item.SKU.toUpperCase() : "";
-    const precio = state.preciosLookup ? (state.preciosLookup[lookupKey] || 0) : 0;
-    const importe = item.PedidoSugerido * precio;
+    let precioSinIva = state.preciosLookup ? (state.preciosLookup[lookupKey] || 0) : 0;
+    // Redondear a 2 decimales para evitar 134.4022
+    precioSinIva = Math.round(precioSinIva * 100) / 100;
+    const importeSinIva = Math.round((item.PedidoSugerido * precioSinIva) * 100) / 100;
     
-    subtotal += importe;
+    subtotalSinIva += importeSinIva;
     
-    wsPedido[`B${rowNumber}`] = { t: "n", v: idx + 1 };                        
-    wsPedido[`C${rowNumber}`] = { t: "s", v: item.SKU || "" };                 
-    wsPedido[`D${rowNumber}`] = { t: "s", v: item.Producto || "" };             
-    wsPedido[`E${rowNumber}`] = { t: "n", v: item.PedidoSugerido || 0 };       
-    wsPedido[`F${rowNumber}`] = { t: "n", v: precio };                         
-    wsPedido[`G${rowNumber}`] = { t: "n", v: importe };  // Valor calculado, no fórmula
+    wsPedido[`B${rowNumber}`] = { t: "n", v: idx + 1 };
+    wsPedido[`C${rowNumber}`] = { t: "s", v: item.SKU || "" };
+    wsPedido[`D${rowNumber}`] = { t: "s", v: item.Producto || "" };
+    wsPedido[`E${rowNumber}`] = { t: "n", v: item.PedidoSugerido || 0 };
+    wsPedido[`F${rowNumber}`] = { t: "n", v: precioSinIva };
+    wsPedido[`G${rowNumber}`] = { t: "n", v: importeSinIva };
+    
+    // Aplicar formato moneda a las celdas de precio y subtotal
+    wsPedido[`F${rowNumber}`].z = "$#,##0.00";
+    wsPedido[`G${rowNumber}`].z = "$#,##0.00";
   }
   
-  // Calcular IVA (13%) y total
-  iva = subtotal * 0.13;
-  total = subtotal + iva;
+  subtotalSinIva = Math.round(subtotalSinIva * 100) / 100;
+const iva = Math.round(subtotalSinIva * 0.14 * 100) / 100;
+const totalConIva = Math.round((subtotalSinIva + iva) * 100) / 100;
   
-  // Escribir totales como valores (no fórmulas)
-  if (wsPedido["G3"]) wsPedido["G3"] = { t: "n", v: subtotal };
-  if (wsPedido["G4"]) wsPedido["G4"] = { t: "n", v: iva };
-  if (wsPedido["G5"]) wsPedido["G5"] = { t: "n", v: total };
-  
-  // Formato de moneda para los totales
-  if (wsPedido["G3"]) wsPedido["G3"].z = "$#,##0.00";
-  if (wsPedido["G4"]) wsPedido["G4"].z = "$#,##0.00";
-  if (wsPedido["G5"]) wsPedido["G5"].z = "$#,##0.00";
+  wsPedido["G3"] = { t: "n", v: subtotalSinIva, z: "$#,##0.00" };
+  wsPedido["G4"] = { t: "n", v: iva, z: "$#,##0.00" };
+  wsPedido["G5"] = { t: "n", v: totalConIva, z: "$#,##0.00" };
 
-  // Crear nombre del archivo
   const day = String(today.getDate()).padStart(2, '0');
   const month = String(today.getMonth() + 1).padStart(2, '0');
   const year = today.getFullYear();
@@ -153,9 +202,9 @@ function exportResults() {
   const nombreArchivo = `${fechaFormateada} - Tecno Bahia - ${sucursal}.xlsx`;
   
   console.log("📄 Generando archivo:", nombreArchivo);
-  console.log("💰 Subtotal:", subtotal, "IVA:", iva, "TOTAL:", total);
+  console.log("💰 Subtotal sin IVA:", subtotalSinIva, "IVA:", iva, "TOTAL CON IVA:", totalConIva);
   
   XLSX.writeFile(wb, nombreArchivo, { bookType: "xlsx", cellDates: true });
   
-  setStatus(`📁 Pedido descargado: ${productsToOrder.length} productos. Total: $${total.toFixed(2)}`, false);
+  setStatus(`📁 Pedido descargado: ${productsToOrder.length} productos. Total con IVA: $${totalConIva.toFixed(2)}`, false);
 }

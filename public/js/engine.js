@@ -50,7 +50,6 @@ function parseSheetWithAutoHeader(sheet) {
 }
 
 function computeRow(sku, producto, inventario, map) {
-  // Obtener reglas de admin
   const regla = state.adminRules[sku] || {};
   const hasMin = (regla.minimo !== undefined && regla.minimo !== "" && regla.minimo !== null);
   const hasMax = (regla.maximo !== undefined && regla.maximo !== "" && regla.maximo !== null);
@@ -58,16 +57,12 @@ function computeRow(sku, producto, inventario, map) {
   const minimo = hasMin ? Number(regla.minimo) : 0;
   const maximo = hasMax ? Number(regla.maximo) : 0;
 
-  // Buscar precio en catálogo
-  const precioCatalogoMaster = state.preciosLookup[sku] !== undefined ? state.preciosLookup[sku] : null;
+  // Precio SIN IVA desde el lookup
+  const precioSinIva = state.preciosLookup[sku] !== undefined ? state.preciosLookup[sku] : null;
 
-  // Asegurar que inventario sea número
   const stockActual = (inventario === undefined || inventario === null || inventario === "") ? 0 : Number(inventario);
 
-  // Calcular pedido sugerido
   let pedidoSugerido = 0;
-  
-  // 🔥 SOLO si tiene reglas completas (Mín y Máx) - así lo pediste
   if (hasMin && hasMax) {
     if (stockActual < minimo) {
       pedidoSugerido = maximo - stockActual;
@@ -77,16 +72,15 @@ function computeRow(sku, producto, inventario, map) {
 
   const exceso = (hasMax && stockActual > maximo) ? (stockActual - maximo) : 0;
 
-  // Costos
+  // Costos usando precio SIN IVA
   let costoUnitarioFinal = null;
   let costoTotalFinal = null;
 
-  if (precioCatalogoMaster !== null && !isNaN(precioCatalogoMaster) && precioCatalogoMaster > 0) {
-    costoUnitarioFinal = Number(precioCatalogoMaster);
+  if (precioSinIva !== null && !isNaN(precioSinIva) && precioSinIva > 0) {
+    costoUnitarioFinal = Number(precioSinIva);
     costoTotalFinal = pedidoSugerido * costoUnitarioFinal;
   }
 
-  // Determinar estado
   let estado = "SIN REGLAS";
   if (hasMin && hasMax) {
     if (pedidoSugerido > 0) estado = "PEDIR";
@@ -102,19 +96,18 @@ function computeRow(sku, producto, inventario, map) {
     SKU: sku,
     Producto: producto,
     Inventario: stockActual,
-    CostoUnitario: costoUnitarioFinal, 
+    CostoUnitario: costoUnitarioFinal,
     Minimo: hasMin ? minimo : "",
     Maximo: hasMax ? maximo : "",
     ConsumoMensual: 0,
     PedidoSugerido: pedidoSugerido,
-    CostoTotal: costoTotalFinal,       
+    CostoTotal: costoTotalFinal,
     Exceso: exceso,
     Estado: estado
   };
 }
 
 function recalculateRows() {
-  // Primero, procesar productos del inventario
   const agrupar = {};
   
   if (state.rawJson && state.rawJson.length && state.columnMap) {
@@ -138,40 +131,42 @@ function recalculateRows() {
     });
   }
   
-  // 🔥 Agregar productos que tienen reglas COMPLETAS (Mín y Máx) pero NO están en el inventario
+  const skusConPrecio = new Set(Object.keys(state.preciosLookup || {}));
+  
+  const agruparConPrecio = {};
+  Object.keys(agrupar).forEach(sku => {
+    if (skusConPrecio.has(sku)) {
+      agruparConPrecio[sku] = agrupar[sku];
+    } else {
+      console.log(`⚠️ SKU sin precio (omitido del reporte): ${sku}`);
+    }
+  });
+  
   if (state.adminRules && Object.keys(state.adminRules).length > 0) {
     Object.keys(state.adminRules).forEach(sku => {
       const regla = state.adminRules[sku];
       const hasMin = (regla.minimo !== undefined && regla.minimo !== "" && regla.minimo !== null);
       const hasMax = (regla.maximo !== undefined && regla.maximo !== "" && regla.maximo !== null);
       
-      // Solo agregar si tiene AMBOS (Mínimo y Máximo)
-      if (hasMin && hasMax) {
-        // Si el SKU no está en el inventario (no se encontró en agrupar)
-        if (!agrupar[sku]) {
-          // Obtener nombre del producto desde adminRules o listaCompleta
+      if (hasMin && hasMax && skusConPrecio.has(sku)) {
+        if (!agruparConPrecio[sku]) {
           let producto = state.adminRules[sku]?.producto || "";
-          
-          // Buscar en listaCompleta si no tiene nombre
           if (!producto && state.listaCompleta) {
             const found = state.listaCompleta.find(item => item.CODIGO === sku);
             if (found) producto = found.DESCRIPCION;
           }
-          
-          // Agregar con inventario 0
-          agrupar[sku] = {
+          agruparConPrecio[sku] = {
             sku: sku,
             producto: producto || "Sin nombre",
             inventario: 0
           };
-          console.log(`📦 Producto con reglas Mín/Máx sin inventario: ${sku} - inventario: 0, Máximo: ${regla.maximo}`);
+          console.log(`📦 Producto con reglas y precio sin inventario: ${sku}`);
         }
       }
     });
   }
   
-  // Calcular las reglas para todos los productos
-  state.rows = Object.values(agrupar).map(item => {
+  state.rows = Object.values(agruparConPrecio).map(item => {
     return computeRow(item.sku, item.producto, item.inventario, state.columnMap || {});
   });
   
@@ -181,7 +176,6 @@ function recalculateRows() {
     applyFilterAndSearch();
   }
   
-  // Actualizar botón de exportación
   if (typeof updateExportButtonState === "function") {
     updateExportButtonState();
     console.log("🔘 Botón actualizado, productos con pedido:", state.rows.filter(r => r.PedidoSugerido > 0).length);
@@ -190,13 +184,14 @@ function recalculateRows() {
 
 function updateMetrics(rows) {
   const total = rows.length;
-  // Contar productos con pedido sugerido > 0
   const conPedido = rows.filter(r => r.PedidoSugerido > 0).length;
   const conExceso = rows.filter(r => r.Exceso > 0).length;
   
-  const totalPedido = rows.reduce((acc, r) => {
+  const subtotalSinIva = rows.reduce((acc, r) => {
     return acc + (r.CostoTotal !== null && !isNaN(r.CostoTotal) ? r.CostoTotal : 0);
   }, 0);
+  
+  const totalConIva = subtotalSinIva * 1.14;
   
   const elTotal = document.getElementById("mTotal");
   const elPedido = document.getElementById("mPedido");
@@ -208,7 +203,7 @@ function updateMetrics(rows) {
   if (elExceso) elExceso.textContent = conExceso;
   
   if (elCantPedido) {
-    elCantPedido.textContent = "$" + totalPedido.toLocaleString("en-US", {
+    elCantPedido.textContent = "$" + totalConIva.toLocaleString("en-US", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     });

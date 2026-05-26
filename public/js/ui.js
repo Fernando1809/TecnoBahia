@@ -452,9 +452,20 @@ function applyFilterAndSearch() {
   const currentFilter = String(state.activeFilter || "todos").toLowerCase();
 
   if (currentFilter === "pedido" || currentFilter === "pedir") {
-    filtered = filtered.filter(r => r.PedidoSugerido > 0);
+    // 🔥 MODIFICADO: Solo productos con reglas COMPLETAS, precio DEFINIDO, Y pedido > 0
+    filtered = filtered.filter(r => {
+      const hasFullRule = (r.Minimo !== "" && r.Minimo !== undefined && r.Minimo !== null) &&
+                          (r.Maximo !== "" && r.Maximo !== undefined && r.Maximo !== null);
+      const hasPrice = (r.CostoUnitario !== null && r.CostoUnitario !== undefined && r.CostoUnitario > 0);
+      return hasFullRule && hasPrice && r.PedidoSugerido > 0;
+    });
   } else if (currentFilter === "exceso") {
-    filtered = filtered.filter(r => r.Exceso > 0);
+    // 🔥 MODIFICADO: Solo productos con reglas COMPLETAS Y exceso > 0
+    filtered = filtered.filter(r => {
+      const hasFullRule = (r.Minimo !== "" && r.Minimo !== undefined && r.Minimo !== null) &&
+                          (r.Maximo !== "" && r.Maximo !== undefined && r.Maximo !== null);
+      return hasFullRule && r.Exceso > 0;
+    });
   } else if (currentFilter === "ok") {
     filtered = filtered.filter(r => r.PedidoSugerido === 0 && r.Exceso === 0 && r.Estado !== "SIN REGLAS");
   } else if (currentFilter === "zero") {
@@ -490,90 +501,6 @@ function applyFilterAndSearch() {
     filterInfo.textContent = filterText;
   }
 }
-
-function autoSwitchToPedidoFilter() {
-  if (!state.rows || state.rows.length === 0) return;
-  
-  state.activeFilter = "pedido";
-  
-  const chips = document.querySelectorAll(".filter-chip");
-  chips.forEach(chip => {
-    if (chip.getAttribute("data-filter") === "pedido") {
-      chip.classList.add("active");
-    } else {
-      chip.classList.remove("active");
-    }
-  });
-  
-  resetReportPagination();
-  applyFilterAndSearch();
-  console.log("Filtro cambiado automáticamente a pedido");
-}
-
-function initPresentationFilter() {
-  const searchInput = document.getElementById("searchInput");
-  if (!searchInput) return;
-
-  let presSelect = document.getElementById("filterPresentation");
-  if (!presSelect) {
-    presSelect = document.createElement("select");
-    presSelect.id = "filterPresentation";
-    presSelect.style.cssText = `
-      width: auto;
-      height: 38px;
-      padding: 6px 12px;
-      border-radius: 8px;
-      vertical-align: middle;
-      margin-left: 10px;
-      cursor: pointer;
-    `;
-    
-    presSelect.innerHTML = `
-      <option value="all">Presentación: Todas</option>
-      <option value="gal">Galón (Gal)</option>
-      <option value="cub">Cubeta (Cub)</option>
-      <option value="1/4">1/4 de Galón (1/4)</option>
-      <option value="bot">Botella (Bot)</option>
-    `;
-
-    searchInput.parentNode.insertBefore(presSelect, searchInput.nextSibling);
-    searchInput.oninput = function() { 
-      resetReportPagination();
-      applyFilterAndSearch(); 
-    };
-    presSelect.onchange = function() { 
-      resetReportPagination();
-      applyFilterAndSearch(); 
-    };
-  }
-  
-  function updateSelectStyle() {
-    const isDark = document.body.classList.contains('dark');
-    if (isDark) {
-      presSelect.style.backgroundColor = '#1f2937';
-      presSelect.style.color = '#eef2ff';
-      presSelect.style.borderColor = '#2d3748';
-      presSelect.style.border = '1px solid #2d3748';
-    } else {
-      presSelect.style.backgroundColor = '#ffffff';
-      presSelect.style.color = '#15233b';
-      presSelect.style.borderColor = '#d8e0ef';
-      presSelect.style.border = '1px solid #d8e0ef';
-    }
-  }
-  
-  updateSelectStyle();
-  
-  const observer = new MutationObserver(function(mutations) {
-    mutations.forEach(function(mutation) {
-      if (mutation.attributeName === 'class') {
-        updateSelectStyle();
-      }
-    });
-  });
-  observer.observe(document.body, { attributes: true });
-}
-
 // ============================================================
 // SECCIÓN 3: MODAL PARA AGREGAR PRODUCTO
 // ============================================================
@@ -631,11 +558,12 @@ function renderSearchResults(results) {
     return;
   }
   
+  // ✅ USAR PRECIO_SIN_IVA
   resultsDiv.innerHTML = results.map(item => `
-    <div class="search-result-item" data-sku="${escapeHtml(item.CODIGO)}" data-name="${escapeHtml(item.DESCRIPCION)}" data-price="${item.PRECIO}">
+    <div class="search-result-item" data-sku="${escapeHtml(item.CODIGO)}" data-name="${escapeHtml(item.DESCRIPCION)}" data-price="${item.PRECIO_SIN_IVA}">
       <div class="search-result-sku">${escapeHtml(item.CODIGO)}</div>
       <div class="search-result-name">${escapeHtml(item.DESCRIPCION)}</div>
-      <div class="search-result-price">$${fmt(item.PRECIO)}</div>
+      <div class="search-result-price">$${fmt(item.PRECIO_SIN_IVA)}</div>
     </div>
   `).join('');
   
@@ -657,7 +585,6 @@ function renderSearchResults(results) {
   
   resultsDiv.style.display = "block";
 }
-
 function addProductToPedido() {
   if (!selectedProductForOrder) {
     setStatus("Selecciona un producto primero.", true);
@@ -672,6 +599,7 @@ function addProductToPedido() {
   }
   
   const sku = selectedProductForOrder.SKU;
+  // ✅ Este precio ya viene SIN IVA desde el modal
   const precio = selectedProductForOrder.CostoUnitario;
   const producto = selectedProductForOrder.Producto;
   
@@ -716,7 +644,6 @@ function addProductToPedido() {
   closeAddProductModal();
   if (typeof updateExportButtonState === "function") updateExportButtonState();
 }
-
 function initManualProductModal() {
   const addBtn = document.getElementById("btnAddProductToOrder");
   const closeBtn = document.getElementById("btnCloseModal");
@@ -865,5 +792,80 @@ function renderAdminPagination(currentPage, totalPages, totalItems) {
 // ============================================================
 // SECCIÓN 5: INICIALIZACIÓN
 // ============================================================
+// ============================================================
+// CAMBIO AUTOMÁTICO AL FILTRO "PEDIDO" DESPUÉS DE CARGAR INVENTARIO
+// ============================================================
+
+function autoSwitchToPedidoFilter() {
+  console.log("🔄 autoSwitchToPedidoFilter ejecutándose...");
+  console.log("📊 state.rows length:", state.rows ? state.rows.length : 0);
+  
+  if (!state.rows || state.rows.length === 0) {
+    console.log("⚠️ No hay datos para cambiar filtro");
+    mostrarNotificacion("⚠️ Carga primero un archivo de inventario", true);
+    return;
+  }
+  
+  // Contar cuántos productos tienen pedido (con reglas completas y precio)
+  const productosConPedido = state.rows.filter(r => {
+    const hasFullRule = (r.Minimo !== "" && r.Minimo !== undefined && r.Minimo !== null) &&
+                        (r.Maximo !== "" && r.Maximo !== undefined && r.Maximo !== null);
+    const hasPrice = (r.CostoUnitario !== null && r.CostoUnitario !== undefined && r.CostoUnitario > 0);
+    return hasFullRule && hasPrice && r.PedidoSugerido > 0;
+  }).length;
+  
+  console.log(`📦 Productos con pedido: ${productosConPedido}`);
+  
+  // Cambiar el filtro activo a "pedido"
+  state.activeFilter = "pedido";
+  console.log("✅ state.activeFilter cambiado a:", state.activeFilter);
+  
+  // Actualizar los chips visualmente
+  const chips = document.querySelectorAll(".filter-chip");
+  console.log("🔘 Chips encontrados:", chips.length);
+  
+  let chipPedidoEncontrado = false;
+  chips.forEach(chip => {
+    const filterValue = chip.getAttribute("data-filter");
+    if (filterValue === "pedido") {
+      chip.classList.add("active");
+      chipPedidoEncontrado = true;
+      console.log("✅ Chip 'pedido' activado");
+    } else {
+      chip.classList.remove("active");
+    }
+  });
+  
+  if (!chipPedidoEncontrado) {
+    console.warn("⚠️ No se encontró el chip con data-filter='pedido'");
+  }
+  
+  // Resetear paginación y aplicar filtro
+  if (typeof resetReportPagination === "function") {
+    resetReportPagination();
+    console.log("✅ Paginación reseteada");
+  } else {
+    console.warn("⚠️ resetReportPagination no encontrada");
+    // Forzar reset manual
+    if (window.reportPageState) window.reportPageState.currentPage = 1;
+  }
+  
+  if (typeof applyFilterAndSearch === "function") {
+    applyFilterAndSearch();
+    console.log("✅ Filtro aplicado");
+  } else {
+    console.error("❌ applyFilterAndSearch no encontrada");
+  }
+  
+  // Mostrar notificación
+  if (productosConPedido === 0) {
+    mostrarNotificacion("📊 No hay productos que requieran pedido en este momento.\nVerifica que tengas precios cargados y reglas definidas.", true);
+  } else {
+    mostrarNotificacion(`📊 Filtro cambiado a "PEDIDO". ${productosConPedido} productos requieren pedido.`, false);
+  }
+  
+  console.log("🎯 autoSwitchToPedidoFilter completado");
+}
+
 
 setTimeout(initPresentationFilter, 400);

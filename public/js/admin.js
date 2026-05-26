@@ -67,7 +67,6 @@ async function syncToFirestore() {
 }
 
 async function loadSettings() {
-  // Primero cargar desde localStorage
   const savedDarkMode = localStorage.getItem('tecnobahia_darkmode');
   const savedView = localStorage.getItem('tecnobahia_currentview');
   
@@ -157,10 +156,10 @@ function updatePreciosStatusDisplay(count) {
         minute: '2-digit',
         second: '2-digit'
       });
-      preciosInfo.innerHTML = `<strong>${escapeHtml(preciosFileName)}</strong><br>📅 ${fechaFormateada}<br>📊 ${count} productos cargados`;
+      preciosInfo.innerHTML = `<strong>${escapeHtml(preciosFileName)}</strong><br>📅 ${fechaFormateada}<br>📊 ${count} productos cargados (Precios SIN IVA)`;
       preciosInfo.style.color = "var(--ok)";
     } else if (count > 0) {
-      preciosInfo.innerHTML = `<strong>Precios cargados</strong><br>📊 ${count} productos cargados`;
+      preciosInfo.innerHTML = `<strong>Precios cargados</strong><br>📊 ${count} productos cargados (SIN IVA)`;
       preciosInfo.style.color = "var(--ok)";
     } else {
       preciosInfo.innerHTML = "No hay precios cargados";
@@ -557,6 +556,7 @@ function importRulesExcel() {
       }
       
       let importedCount = 0;
+      let skippedNoRules = 0;
       
       for (let i = headerRowIndex + 1; i < aoa.length; i++) {
         const rowArr = aoa[i] || [];
@@ -574,18 +574,26 @@ function importRulesExcel() {
           if (found) producto = found.DESCRIPCION;
         }
         
-        if (minimo === null && maximo === null && !producto) continue;
-        
-        state.adminRules[sku] = {
-          minimo: minimo === null ? "" : minimo,
-          maximo: maximo === null ? "" : maximo,
-          producto: producto || state.adminRules[sku]?.producto || ""
-        };
-        importedCount++;
+        if (minimo !== null && maximo !== null) {
+          state.adminRules[sku] = {
+            minimo: minimo,
+            maximo: maximo,
+            producto: producto || state.adminRules[sku]?.producto || ""
+          };
+          importedCount++;
+        } else {
+          skippedNoRules++;
+          console.log(`⚠️ SKU omitido (sin Mín o Máx): ${sku}`);
+        }
       }
       
       persistRules();
-      recalculateRows();
+      
+      // ✅ SOLO recalcular si hay inventario cargado, pero NO cambiar el filtro
+      if (state.rows && state.rows.length > 0) {
+        recalculateRows();
+      }
+      
       applyAdminFilter();
       
       reglasLastUpdate = new Date();
@@ -598,11 +606,15 @@ function importRulesExcel() {
         totalCount: importedCount
       }).catch(e => console.warn("No se pudo guardar metadata de reglas"));
       
-      // 🔥 LIMPIAR INPUT
       fileInput.value = "";
       
-      alert(`Se importaron con éxito ${importedCount} reglas de inventario.`);
-      setStatus(`✅ Reglas importadas: ${importedCount} SKUs`, false);
+      let mensaje = `✅ Se importaron ${importedCount} reglas de inventario.`;
+      if (skippedNoRules > 0) {
+        mensaje += ` ⚠️ Se omitieron ${skippedNoRules} SKUs sin Mínimo o Máximo.`;
+      }
+      alert(mensaje);
+      setStatus(mensaje, false);
+      
     } catch (err) { 
       console.error("Error al procesar el archivo Excel de reglas:", err); 
       setStatus("❌ Error al importar reglas", true);
@@ -611,16 +623,49 @@ function importRulesExcel() {
   };
   reader.readAsArrayBuffer(file);
 }
+// ============================================================
+// SECCIÓN 4: PRECIOS - VERSIÓN DEFINITIVA (SOLO SIN IVA)
+// ============================================================
 
-// ============================================================
-// SECCIÓN 4: PRECIOS
-// ============================================================
+async function clearAllPrices() {
+  if (!state.adminUnlocked) return;
+  if (confirm("⚠️ ¿ELIMINAR TODOS LOS PRECIOS GUARDADOS? Esta acción no se puede deshacer. Luego deberás volver a subir el archivo de precios.")) {
+    state.listaCompleta = [];
+    state.preciosLookup = {};
+    preciosLastUpdate = null;
+    preciosFileName = null;
+    
+    await firestoreSetDocData("listaCompleta", {
+      listaCompleta: [],
+      preciosLookup: {},
+      lastUpdate: new Date().toISOString(),
+      fileName: "Precios eliminados",
+      totalCount: 0
+    });
+    
+    updatePreciosStatusDisplay(0);
+    recalculateRows();
+    setStatus("✅ Todos los precios han sido eliminados. Ahora puedes subir el archivo nuevamente.", false);
+  }
+}
 
 async function loadListaCompleta() {
   try {
     const data = await firestoreGetDocData("listaCompleta");
     state.listaCompleta = data.listaCompleta || [];
     state.preciosLookup = data.preciosLookup || {};
+    
+    // Verificar si los precios guardados tienen IVA (valores sospechosamente altos)
+    const muestra = Object.values(state.preciosLookup).slice(0, 5);
+    const preciosAltos = muestra.some(p => p > 100);
+    if (preciosAltos && state.listaCompleta.length > 0) {
+      console.warn("⚠️ Se detectaron precios altos - posiblemente contienen IVA. Sugerimos limpiar y recargar.");
+      const preciosInfo = document.getElementById("preciosInfo");
+      if (preciosInfo) {
+        preciosInfo.innerHTML = `<strong>⚠️ ATENCIÓN</strong><br>Los precios cargados podrían tener IVA incluido.<br>Usa el botón "Limpiar precios" y vuelve a subir el archivo.`;
+        preciosInfo.style.color = "var(--danger)";
+      }
+    }
     
     if (data.lastUpdate) {
       preciosLastUpdate = new Date(data.lastUpdate);
@@ -738,9 +783,11 @@ async function importListaCompleta() {
         return;
       }
       
+      // LIMPIAR COMPLETAMENTE los datos anteriores
       state.listaCompleta = [];
       state.preciosLookup = {};
       let processedCount = 0;
+      let errores = [];
       
       for (let i = headerRowIndex + 1; i < aoa.length; i++) {
         const rowArr = aoa[i] || [];
@@ -749,20 +796,30 @@ async function importListaCompleta() {
         const codigo = String(rowArr[codigoCol] || "").trim().toUpperCase();
         const descripcion = descCol !== null ? String(rowArr[descCol] || "").trim() : "";
         
-        const precioSinIva = toNum(rowArr[precioColPAD]);
-        const precioConIva = precioSinIva * 1.13;
+        // PRECIO SIN IVA - DIRECTAMENTE DEL PAD
+        let precioSinIva = toNum(rowArr[precioColPAD]);
+        
+        // Verificar que el precio sea razonable (menor a 1000 es seguro que no tiene IVA duplicado)
+        if (precioSinIva > 1000) {
+          errores.push(`${codigo}: ${precioSinIva} - posible IVA incluido`);
+        }
         
         if (!codigo) continue;
         
         const item = {
           CODIGO: codigo,
           DESCRIPCION: descripcion,
-          PRECIO: precioConIva
+          PRECIO_SIN_IVA: precioSinIva
         };
         
         state.listaCompleta.push(item);
-        state.preciosLookup[codigo] = precioConIva;
+        // Guardamos el precio SIN IVA en el lookup
+        state.preciosLookup[codigo] = precioSinIva;
         processedCount++;
+      }
+      
+      if (errores.length > 0) {
+        console.warn("⚠️ Precios sospechosamente altos:", errores.slice(0, 5));
       }
       
       preciosLastUpdate = new Date();
@@ -777,10 +834,15 @@ async function importListaCompleta() {
 
       applyAdminFilter();
       
-      // 🔥 LIMPIAR INPUT
       fileInput.value = "";
       
-      setStatus(`✅ ${processedCount} precios cargados exitosamente.`, false);
+      let mensaje = `✅ ${processedCount} precios cargados exitosamente (PAD sin IVA).`;
+      if (errores.length > 0) {
+        mensaje += ` ⚠️ Se detectaron ${errores.length} precios altos. Verifica que el archivo contenga PAD sin IVA.`;
+      }
+      setStatus(mensaje, false);
+      updatePreciosStatusDisplay(processedCount);
+      
     } catch (err) {
       console.error(err);
       setStatus("Error al cargar precios.", true);
@@ -903,7 +965,6 @@ async function uploadPedidoTemplate() {
     
     updateTemplateStatusDisplay();
     
-    // 🔥 LIMPIAR INPUT
     fileInput.value = "";
     
     setStatus(`✅ Plantilla "${file.name}" subida con éxito.`, false);
@@ -1020,12 +1081,12 @@ function arrayBufferToBase64(buffer) {
     reader.readAsDataURL(blob);
   });
 }
+
 // ============================================================
 // DESCARGA DE PLANTILLA KOLO PARA MÍNIMOS Y MÁXIMOS
 // ============================================================
 
 function downloadKOLOTemplate() {
-  // Crear datos de ejemplo para la plantilla
   const templateData = [
     { SKU: "A24W451-1", Minimo: 10, Maximo: 50 },
     { SKU: "A24W451-5", Minimo: 5, Maximo: 25 },
@@ -1034,14 +1095,10 @@ function downloadKOLOTemplate() {
     { SKU: "A24T454-1", Minimo: 6, Maximo: 30 }
   ];
   
-  // Crear libro de trabajo
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.json_to_sheet(templateData);
-  
-  // Ajustar anchos de columnas
   ws['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 12 }];
   
-  // Agregar hoja de instrucciones
   const instrucciones = [
     ["INSTRUCCIONES PARA CARGA MASIVA EN KOLO"],
     [""],
@@ -1060,7 +1117,6 @@ function downloadKOLOTemplate() {
   XLSX.utils.book_append_sheet(wb, ws, "MIN_MAX_KOLO");
   XLSX.utils.book_append_sheet(wb, wsInstrucciones, "INSTRUCCIONES");
   
-  // Descargar archivo
   const fecha = new Date().toISOString().slice(0, 10);
   XLSX.writeFile(wb, `plantilla_kolo_min_max_${fecha}.xlsx`);
   
