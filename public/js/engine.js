@@ -64,7 +64,8 @@ function computeRow(sku, producto, inventario, map) {
 
   let pedidoSugerido = 0;
   if (hasMin && hasMax) {
-    if (stockActual < minimo) {
+    // ✅ CAMBIO: Ahora pide cuando el inventario es IGUAL O MENOR al mínimo
+    if (stockActual <= minimo) {
       pedidoSugerido = maximo - stockActual;
       if (pedidoSugerido < 0) pedidoSugerido = 0;
     }

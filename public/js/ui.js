@@ -110,7 +110,7 @@ function renderTableDynamic(data, filterType) {
   }).join('')}</tr>`;
 
   if (data.length === 0) {
-    tbody.innerHTML = `<td><td colspan="${columns.length}" style="text-align:center; padding:40px;">No hay productos que coincidan con el filtro seleccionado</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${columns.length}" style="text-align:center; padding:40px;">No hay productos que coincidan con el filtro seleccionado</td></tr>`;
     document.getElementById("reportPagination")?.remove();
     return;
   }
@@ -452,7 +452,7 @@ function applyFilterAndSearch() {
   const currentFilter = String(state.activeFilter || "todos").toLowerCase();
 
   if (currentFilter === "pedido" || currentFilter === "pedir") {
-    // 🔥 MODIFICADO: Solo productos con reglas COMPLETAS, precio DEFINIDO, Y pedido > 0
+    // Solo productos con reglas COMPLETAS, precio DEFINIDO, Y pedido > 0
     filtered = filtered.filter(r => {
       const hasFullRule = (r.Minimo !== "" && r.Minimo !== undefined && r.Minimo !== null) &&
                           (r.Maximo !== "" && r.Maximo !== undefined && r.Maximo !== null);
@@ -460,7 +460,7 @@ function applyFilterAndSearch() {
       return hasFullRule && hasPrice && r.PedidoSugerido > 0;
     });
   } else if (currentFilter === "exceso") {
-    // 🔥 MODIFICADO: Solo productos con reglas COMPLETAS Y exceso > 0
+    // Solo productos con reglas COMPLETAS Y exceso > 0
     filtered = filtered.filter(r => {
       const hasFullRule = (r.Minimo !== "" && r.Minimo !== undefined && r.Minimo !== null) &&
                           (r.Maximo !== "" && r.Maximo !== undefined && r.Maximo !== null);
@@ -501,6 +501,7 @@ function applyFilterAndSearch() {
     filterInfo.textContent = filterText;
   }
 }
+
 // ============================================================
 // SECCIÓN 3: MODAL PARA AGREGAR PRODUCTO
 // ============================================================
@@ -558,7 +559,6 @@ function renderSearchResults(results) {
     return;
   }
   
-  // ✅ USAR PRECIO_SIN_IVA
   resultsDiv.innerHTML = results.map(item => `
     <div class="search-result-item" data-sku="${escapeHtml(item.CODIGO)}" data-name="${escapeHtml(item.DESCRIPCION)}" data-price="${item.PRECIO_SIN_IVA}">
       <div class="search-result-sku">${escapeHtml(item.CODIGO)}</div>
@@ -585,6 +585,7 @@ function renderSearchResults(results) {
   
   resultsDiv.style.display = "block";
 }
+
 function addProductToPedido() {
   if (!selectedProductForOrder) {
     setStatus("Selecciona un producto primero.", true);
@@ -599,7 +600,6 @@ function addProductToPedido() {
   }
   
   const sku = selectedProductForOrder.SKU;
-  // ✅ Este precio ya viene SIN IVA desde el modal
   const precio = selectedProductForOrder.CostoUnitario;
   const producto = selectedProductForOrder.Producto;
   
@@ -644,6 +644,7 @@ function addProductToPedido() {
   closeAddProductModal();
   if (typeof updateExportButtonState === "function") updateExportButtonState();
 }
+
 function initManualProductModal() {
   const addBtn = document.getElementById("btnAddProductToOrder");
   const closeBtn = document.getElementById("btnCloseModal");
@@ -700,11 +701,11 @@ function renderAdminTable(data) {
     const tr = document.createElement("tr");
     const nombreProducto = r.Producto && r.Producto !== "" ? r.Producto : "Sin nombre";
     tr.innerHTML = `
-      <td>${escapeHtml(r.SKU)}</td>
-      <td>${escapeHtml(nombreProducto)}</td>
-      <td><input type="number" min="0" step="1" data-role="min" data-sku="${escapeHtml(r.SKU)}" value="${escapeHtml(r.Minimo)}" style="width:90px;"></td>
-      <td><input type="number" min="0" step="1" data-role="max" data-sku="${escapeHtml(r.SKU)}" value="${escapeHtml(r.Maximo)}" style="width:90px;"></td>
-      <td><button class="btn-secondary" style="background:var(--danger); color:white; padding:4px 8px;" data-delete-sku="${escapeHtml(r.SKU)}">🗑</button></td>
+       <td>${escapeHtml(r.SKU)}</td>
+       <td>${escapeHtml(nombreProducto)}</td>
+       <td><input type="number" min="0" step="1" data-role="min" data-sku="${escapeHtml(r.SKU)}" value="${escapeHtml(r.Minimo)}" style="width:90px;"></td>
+       <td><input type="number" min="0" step="1" data-role="max" data-sku="${escapeHtml(r.SKU)}" value="${escapeHtml(r.Maximo)}" style="width:90px;"></td>
+       <td><button class="btn-secondary" style="background:var(--danger); color:white; padding:4px 8px;" data-delete-sku="${escapeHtml(r.SKU)}">🗑</button></td>
     `;
     tbody.appendChild(tr);
   });
@@ -790,10 +791,7 @@ function renderAdminPagination(currentPage, totalPages, totalItems) {
 }
 
 // ============================================================
-// SECCIÓN 5: INICIALIZACIÓN
-// ============================================================
-// ============================================================
-// CAMBIO AUTOMÁTICO AL FILTRO "PEDIDO" DESPUÉS DE CARGAR INVENTARIO
+// SECCIÓN 5: INICIALIZACIÓN Y AUTO CAMBIO A FILTRO PEDIDO
 // ============================================================
 
 function autoSwitchToPedidoFilter() {
@@ -846,7 +844,6 @@ function autoSwitchToPedidoFilter() {
     console.log("✅ Paginación reseteada");
   } else {
     console.warn("⚠️ resetReportPagination no encontrada");
-    // Forzar reset manual
     if (window.reportPageState) window.reportPageState.currentPage = 1;
   }
   
@@ -867,5 +864,69 @@ function autoSwitchToPedidoFilter() {
   console.log("🎯 autoSwitchToPedidoFilter completado");
 }
 
+function initPresentationFilter() {
+  const searchInput = document.getElementById("searchInput");
+  if (!searchInput) return;
 
+  let presSelect = document.getElementById("filterPresentation");
+  if (!presSelect) {
+    presSelect = document.createElement("select");
+    presSelect.id = "filterPresentation";
+    presSelect.style.cssText = `
+      width: auto;
+      height: 38px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      vertical-align: middle;
+      margin-left: 10px;
+      cursor: pointer;
+    `;
+    
+    presSelect.innerHTML = `
+      <option value="all">Presentación: Todas</option>
+      <option value="gal">Galón (Gal)</option>
+      <option value="cub">Cubeta (Cub)</option>
+      <option value="1/4">1/4 de Galón (1/4)</option>
+      <option value="bot">Botella (Bot)</option>
+    `;
+
+    searchInput.parentNode.insertBefore(presSelect, searchInput.nextSibling);
+    searchInput.oninput = function() { 
+      resetReportPagination();
+      applyFilterAndSearch(); 
+    };
+    presSelect.onchange = function() { 
+      resetReportPagination();
+      applyFilterAndSearch(); 
+    };
+  }
+  
+  function updateSelectStyle() {
+    const isDark = document.body.classList.contains('dark');
+    if (isDark) {
+      presSelect.style.backgroundColor = '#1f2937';
+      presSelect.style.color = '#eef2ff';
+      presSelect.style.borderColor = '#2d3748';
+      presSelect.style.border = '1px solid #2d3748';
+    } else {
+      presSelect.style.backgroundColor = '#ffffff';
+      presSelect.style.color = '#15233b';
+      presSelect.style.borderColor = '#d8e0ef';
+      presSelect.style.border = '1px solid #d8e0ef';
+    }
+  }
+  
+  updateSelectStyle();
+  
+  const observer = new MutationObserver(function(mutations) {
+    mutations.forEach(function(mutation) {
+      if (mutation.attributeName === 'class') {
+        updateSelectStyle();
+      }
+    });
+  });
+  observer.observe(document.body, { attributes: true });
+}
+
+// Inicialización
 setTimeout(initPresentationFilter, 400);

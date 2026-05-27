@@ -575,10 +575,17 @@ function importRulesExcel() {
         }
         
         if (minimo !== null && maximo !== null) {
+          // 🔥 BUSCAR EL NOMBRE DEL PRODUCTO DESDE LA LISTA DE PRECIOS
+          let nombreProducto = producto;
+          if (!nombreProducto && state.listaCompleta) {
+            const found = state.listaCompleta.find(item => item.CODIGO === sku);
+            if (found) nombreProducto = found.DESCRIPCION;
+          }
+          
           state.adminRules[sku] = {
             minimo: minimo,
             maximo: maximo,
-            producto: producto || state.adminRules[sku]?.producto || ""
+            producto: nombreProducto || sku
           };
           importedCount++;
         } else {
@@ -623,6 +630,7 @@ function importRulesExcel() {
   };
   reader.readAsArrayBuffer(file);
 }
+
 // ============================================================
 // SECCIÓN 4: PRECIOS - VERSIÓN DEFINITIVA (SOLO SIN IVA)
 // ============================================================
