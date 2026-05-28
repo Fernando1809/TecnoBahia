@@ -64,7 +64,6 @@ function computeRow(sku, producto, inventario, map) {
 
   let pedidoSugerido = 0;
   if (hasMin && hasMax) {
-    // ✅ CAMBIO: Ahora pide cuando el inventario es IGUAL O MENOR al mínimo
     if (stockActual <= minimo) {
       pedidoSugerido = maximo - stockActual;
       if (pedidoSugerido < 0) pedidoSugerido = 0;
@@ -185,28 +184,33 @@ function recalculateRows() {
 
 function updateMetrics(rows) {
   const total = rows.length;
-  const conPedido = rows.filter(r => r.PedidoSugerido > 0).length;
+  
+  // Para el contador de "Con pedido" usamos el filtro de inventario si está activo
+  let conPedido = rows.filter(r => r.PedidoSugerido > 0).length;
+  
+  // Si estamos en el filtro de pedido, aplicar el filtro de inventario
+  if (state.activeFilter === "pedido" && window.inventoryPedidoFilter) {
+    conPedido = rows.filter(r => {
+      if (r.PedidoSugerido <= 0) return false;
+      const inventario = r.Inventario;
+      if (window.inventoryPedidoFilter.includeZero && inventario === 0) return true;
+      if (window.inventoryPedidoFilter.includeOne && inventario === 1) return true;
+      return false;
+    }).length;
+  }
+  
   const conExceso = rows.filter(r => r.Exceso > 0).length;
-  
-  const subtotalSinIva = rows.reduce((acc, r) => {
-    return acc + (r.CostoTotal !== null && !isNaN(r.CostoTotal) ? r.CostoTotal : 0);
-  }, 0);
-  
-  const totalConIva = subtotalSinIva * 1.14;
   
   const elTotal = document.getElementById("mTotal");
   const elPedido = document.getElementById("mPedido");
   const elExceso = document.getElementById("mExceso");
-  const elCantPedido = document.getElementById("mCantPedido");
   
   if (elTotal) elTotal.textContent = total;
   if (elPedido) elPedido.textContent = conPedido;
   if (elExceso) elExceso.textContent = conExceso;
   
-  if (elCantPedido) {
-    elCantPedido.textContent = "$" + totalConIva.toLocaleString("en-US", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    });
+  // Llamar a la función que recalcula el total según el filtro
+  if (typeof recalcularTotalPorFiltroInventario === "function") {
+    recalcularTotalPorFiltroInventario();
   }
 }

@@ -122,10 +122,19 @@ function exportResults() {
     return;
   }
 
-  const productsToOrder = state.rows.filter(r => r.PedidoSugerido > 0);
+  // Usar la función que respeta el filtro de inventario seleccionado
+  const productsToOrder = getProductosParaExportar();
   
   if (productsToOrder.length === 0) {
-    setStatus("⚠️ No hay productos que requieran pedido.", true);
+    let mensaje = "";
+    if (window.inventoryPedidoFilter.includeZero && !window.inventoryPedidoFilter.includeOne) {
+      mensaje = "⚠️ No hay productos con inventario = 0 que requieran pedido.";
+    } else if (!window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeOne) {
+      mensaje = "⚠️ No hay productos con inventario = 1 que requieran pedido.";
+    } else {
+      mensaje = "⚠️ No hay productos que requieran pedido según el filtro seleccionado.";
+    }
+    setStatus(mensaje, true);
     return;
   }
   
@@ -186,8 +195,8 @@ function exportResults() {
   }
   
   subtotalSinIva = Math.round(subtotalSinIva * 100) / 100;
-const iva = Math.round(subtotalSinIva * 0.14 * 100) / 100;
-const totalConIva = Math.round((subtotalSinIva + iva) * 100) / 100;
+  const iva = Math.round(subtotalSinIva * 0.14 * 100) / 100;
+  const totalConIva = Math.round((subtotalSinIva + iva) * 100) / 100;
   
   wsPedido["G3"] = { t: "n", v: subtotalSinIva, z: "$#,##0.00" };
   wsPedido["G4"] = { t: "n", v: iva, z: "$#,##0.00" };
@@ -199,12 +208,34 @@ const totalConIva = Math.round((subtotalSinIva + iva) * 100) / 100;
   const fechaFormateada = `${day}-${month}-${year}`;
   let sucursal = state.inventoryOrigin || "Sucursal";
   sucursal = sucursal.replace(/[\\/:*?"<>|]/g, '');
-  const nombreArchivo = `${fechaFormateada} - Tecno Bahia - ${sucursal}.xlsx`;
+  
+  // Indicar en el nombre qué filtro se usó
+  let filtroTexto = "";
+  if (window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeOne) {
+    filtroTexto = " (stock 0 y 1)";
+  } else if (window.inventoryPedidoFilter.includeZero && !window.inventoryPedidoFilter.includeOne) {
+    filtroTexto = " (solo stock 0)";
+  } else if (!window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeOne) {
+    filtroTexto = " (solo stock 1)";
+  }
+  
+  const nombreArchivo = `${fechaFormateada} - Tecno Bahia - ${sucursal}${filtroTexto}.xlsx`;
   
   console.log("📄 Generando archivo:", nombreArchivo);
   console.log("💰 Subtotal sin IVA:", subtotalSinIva, "IVA:", iva, "TOTAL CON IVA:", totalConIva);
+  console.log("📦 Productos incluidos:", productsToOrder.length);
+  console.log("🎯 Filtro aplicado - includeZero:", window.inventoryPedidoFilter.includeZero, "includeOne:", window.inventoryPedidoFilter.includeOne);
   
   XLSX.writeFile(wb, nombreArchivo, { bookType: "xlsx", cellDates: true });
   
-  setStatus(`📁 Pedido descargado: ${productsToOrder.length} productos. Total con IVA: $${totalConIva.toFixed(2)}`, false);
+  let filtroDescripcion = "";
+  if (window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeOne) {
+    filtroDescripcion = "inventario 0 y 1";
+  } else if (window.inventoryPedidoFilter.includeZero && !window.inventoryPedidoFilter.includeOne) {
+    filtroDescripcion = "inventario = 0";
+  } else {
+    filtroDescripcion = "inventario = 1";
+  }
+  
+  setStatus(`📁 Pedido descargado: ${productsToOrder.length} productos (${filtroDescripcion}). Total con IVA: $${totalConIva.toFixed(2)}`, false);
 }

@@ -20,6 +20,14 @@ if (typeof window.reportPageState === 'undefined') {
   };
 }
 
+// Estado del filtro de inventario para pedido (0, 1, ambos)
+if (typeof window.inventoryPedidoFilter === 'undefined') {
+  window.inventoryPedidoFilter = {
+    includeZero: true,
+    includeOne: true
+  };
+}
+
 // Función global para confirmar eliminación (SOLO POR CLIC)
 function confirmDeleteProduct(sku, producto) {
   if (confirm(`¿Deseas eliminar "${producto}" (${sku}) de la lista de pedido?`)) {
@@ -31,6 +39,85 @@ function confirmDeleteProduct(sku, producto) {
   }
 }
 
+// Función para recalcular el total del pedido según el filtro de inventario seleccionado
+function recalcularTotalPorFiltroInventario() {
+  if (!state.rows || state.rows.length === 0) return 0;
+  
+  // Filtrar productos según selección del usuario
+  let productosParaPedido = state.rows.filter(r => r.PedidoSugerido > 0);
+  
+  // Aplicar filtro por nivel de inventario
+  productosParaPedido = productosParaPedido.filter(r => {
+    const inventario = r.Inventario;
+    if (window.inventoryPedidoFilter.includeZero && inventario === 0) return true;
+    if (window.inventoryPedidoFilter.includeOne && inventario === 1) return true;
+    return false;
+  });
+  
+  // Calcular total sin IVA
+  const subtotalSinIva = productosParaPedido.reduce((acc, r) => {
+    return acc + (r.CostoTotal !== null && !isNaN(r.CostoTotal) ? r.CostoTotal : 0);
+  }, 0);
+  
+  // Calcular total con IVA
+  const totalConIva = subtotalSinIva * 1.14;
+  
+  // Actualizar el indicador de total
+  const elCantPedido = document.getElementById("mCantPedido");
+  if (elCantPedido) {
+    elCantPedido.textContent = "$" + totalConIva.toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  }
+  
+  // Actualizar contador de productos con pedido según filtro
+  const elPedido = document.getElementById("mPedido");
+  if (elPedido) {
+    elPedido.textContent = productosParaPedido.length;
+  }
+  
+  return totalConIva;
+}
+
+// Función para cambiar el filtro de inventario desde el select
+function setInventoryPedidoFilter(value) {
+  if (value === "zero") {
+    window.inventoryPedidoFilter.includeZero = true;
+    window.inventoryPedidoFilter.includeOne = false;
+  } else if (value === "one") {
+    window.inventoryPedidoFilter.includeZero = false;
+    window.inventoryPedidoFilter.includeOne = true;
+  } else if (value === "both") {
+    window.inventoryPedidoFilter.includeZero = true;
+    window.inventoryPedidoFilter.includeOne = true;
+  }
+  
+  // Recalcular el total mostrado
+  recalcularTotalPorFiltroInventario();
+  
+  // Mostrar notificación
+  let mensaje = "";
+  if (value === "zero") mensaje = "🔴 Mostrando solo productos con inventario = 0";
+  else if (value === "one") mensaje = "🟡 Mostrando solo productos con inventario = 1";
+  else mensaje = "🟠 Mostrando productos con inventario = 0 y 1";
+  
+  mostrarNotificacion(mensaje, false);
+}
+
+// Función para obtener los productos a exportar según el filtro seleccionado
+function getProductosParaExportar() {
+  if (!state.rows || state.rows.length === 0) return [];
+  
+  return state.rows.filter(r => {
+    if (r.PedidoSugerido <= 0) return false;
+    const inventario = r.Inventario;
+    if (window.inventoryPedidoFilter.includeZero && inventario === 0) return true;
+    if (window.inventoryPedidoFilter.includeOne && inventario === 1) return true;
+    return false;
+  });
+}
+
 function renderTableDynamic(data, filterType) {
   const thead = document.getElementById("tableHeader");
   const tbody = document.getElementById("tableBody");
@@ -40,6 +127,7 @@ function renderTableDynamic(data, filterType) {
 
   // Definir columnas según el filtro
   let columns = [];
+  
   if (activeFilter === "pedido" || activeFilter === "pedir") {
     columns = [
       { key: "SKU", label: "SKU", sortable: true },
@@ -183,7 +271,7 @@ function renderTableDynamic(data, filterType) {
                     onclick="confirmDeleteProduct('${escapeHtml(r.SKU)}', '${escapeHtml(r.Producto)}')">
                     🗑 Eliminar
                   </button>
-                 </td>`;
+                  </td>`;
       }
       
       if (col.key === "Inventario") {
@@ -192,6 +280,8 @@ function renderTableDynamic(data, filterType) {
         
         if (invValue === 0) {
           displayValue = `<span style="color: var(--danger); font-weight: bold;">0</span>`;
+        } else if (invValue === 1) {
+          displayValue = `<span style="color: var(--warning); font-weight: bold;">1</span>`;
         } else {
           displayValue = Math.floor(invValue).toLocaleString("en-US");
         }
@@ -437,6 +527,8 @@ function handlePedidoSugeridoChange(event) {
   }
 
   updateMetrics(state.rows);
+  // Recalcular el total según el filtro de inventario actual
+  recalcularTotalPorFiltroInventario();
   applyFilterAndSearch();
 }
 
@@ -451,8 +543,8 @@ function applyFilterAndSearch() {
   let filtered = [...state.rows];
   const currentFilter = String(state.activeFilter || "todos").toLowerCase();
 
+  // FILTROS EXISTENTES
   if (currentFilter === "pedido" || currentFilter === "pedir") {
-    // Solo productos con reglas COMPLETAS, precio DEFINIDO, Y pedido > 0
     filtered = filtered.filter(r => {
       const hasFullRule = (r.Minimo !== "" && r.Minimo !== undefined && r.Minimo !== null) &&
                           (r.Maximo !== "" && r.Maximo !== undefined && r.Maximo !== null);
@@ -460,7 +552,6 @@ function applyFilterAndSearch() {
       return hasFullRule && hasPrice && r.PedidoSugerido > 0;
     });
   } else if (currentFilter === "exceso") {
-    // Solo productos con reglas COMPLETAS Y exceso > 0
     filtered = filtered.filter(r => {
       const hasFullRule = (r.Minimo !== "" && r.Minimo !== undefined && r.Minimo !== null) &&
                           (r.Maximo !== "" && r.Maximo !== undefined && r.Maximo !== null);
@@ -494,10 +585,10 @@ function applyFilterAndSearch() {
   if (filterInfo) {
     let filterText = "";
     if (currentFilter === "all" || currentFilter === "todos") filterText = "Mostrando todos los productos";
-    else if (currentFilter === "pedido" || currentFilter === "pedir") filterText = `Mostrando productos con pedido (${filtered.length} de ${state.rows.length})`;
-    else if (currentFilter === "exceso") filterText = `Mostrando productos en exceso (${filtered.length} de ${state.rows.length})`;
-    else if (currentFilter === "ok") filterText = `Mostrando productos dentro del rango (${filtered.length} de ${state.rows.length})`;
-    else if (currentFilter === "zero") filterText = `Mostrando productos sin stock (${filtered.length} de ${state.rows.length})`;
+    else if (currentFilter === "pedido" || currentFilter === "pedir") filterText = `📦 Productos con pedido (${filtered.length} de ${state.rows.length})`;
+    else if (currentFilter === "exceso") filterText = `⚠️ Productos en exceso (${filtered.length} de ${state.rows.length})`;
+    else if (currentFilter === "ok") filterText = `✅ Productos dentro del rango (${filtered.length} de ${state.rows.length})`;
+    else if (currentFilter === "zero") filterText = `🔴 Productos sin stock (${filtered.length} de ${state.rows.length})`;
     filterInfo.textContent = filterText;
   }
 }
@@ -640,6 +731,7 @@ function addProductToPedido() {
   
   resetReportPagination();
   updateMetrics(state.rows);
+  recalcularTotalPorFiltroInventario();
   applyFilterAndSearch();
   closeAddProductModal();
   if (typeof updateExportButtonState === "function") updateExportButtonState();
@@ -701,11 +793,11 @@ function renderAdminTable(data) {
     const tr = document.createElement("tr");
     const nombreProducto = r.Producto && r.Producto !== "" ? r.Producto : "Sin nombre";
     tr.innerHTML = `
-       <td>${escapeHtml(r.SKU)}</td>
-       <td>${escapeHtml(nombreProducto)}</td>
-       <td><input type="number" min="0" step="1" data-role="min" data-sku="${escapeHtml(r.SKU)}" value="${escapeHtml(r.Minimo)}" style="width:90px;"></td>
-       <td><input type="number" min="0" step="1" data-role="max" data-sku="${escapeHtml(r.SKU)}" value="${escapeHtml(r.Maximo)}" style="width:90px;"></td>
-       <td><button class="btn-secondary" style="background:var(--danger); color:white; padding:4px 8px;" data-delete-sku="${escapeHtml(r.SKU)}">🗑</button></td>
+        <td>${escapeHtml(r.SKU)}</td>
+        <td>${escapeHtml(nombreProducto)}</td>
+        <td><input type="number" min="0" step="1" data-role="min" data-sku="${escapeHtml(r.SKU)}" value="${escapeHtml(r.Minimo)}" style="width:90px;"></td>
+        <td><input type="number" min="0" step="1" data-role="max" data-sku="${escapeHtml(r.SKU)}" value="${escapeHtml(r.Maximo)}" style="width:90px;"></td>
+        <td><button class="btn-secondary" style="background:var(--danger); color:white; padding:4px 8px;" data-delete-sku="${escapeHtml(r.SKU)}">🗑</button></td>
     `;
     tbody.appendChild(tr);
   });
@@ -853,6 +945,9 @@ function autoSwitchToPedidoFilter() {
   } else {
     console.error("❌ applyFilterAndSearch no encontrada");
   }
+  
+  // Recalcular total según filtro de inventario
+  recalcularTotalPorFiltroInventario();
   
   // Mostrar notificación
   if (productosConPedido === 0) {
