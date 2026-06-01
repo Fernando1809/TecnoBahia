@@ -64,6 +64,7 @@ function computeRow(sku, producto, inventario, map) {
 
   let pedidoSugerido = 0;
   if (hasMin && hasMax) {
+    // ✅ Pide cuando el inventario es IGUAL O MENOR al mínimo
     if (stockActual <= minimo) {
       pedidoSugerido = maximo - stockActual;
       if (pedidoSugerido < 0) pedidoSugerido = 0;
@@ -186,17 +187,26 @@ function updateMetrics(rows) {
   const total = rows.length;
   
   // Para el contador de "Con pedido" usamos el filtro de inventario si está activo
-  let conPedido = rows.filter(r => r.PedidoSugerido > 0).length;
+  let conPedido = 0;
   
   // Si estamos en el filtro de pedido, aplicar el filtro de inventario
   if (state.activeFilter === "pedido" && window.inventoryPedidoFilter) {
     conPedido = rows.filter(r => {
       if (r.PedidoSugerido <= 0) return false;
       const inventario = r.Inventario;
+      
+      // Verificar si está en mínimo
+      const minimo = r.Minimo;
+      const estaEnMinimo = (minimo !== undefined && minimo !== "" && minimo !== null && !isNaN(minimo)) 
+                            ? Number(inventario) === Number(minimo) 
+                            : false;
+      
       if (window.inventoryPedidoFilter.includeZero && inventario === 0) return true;
-      if (window.inventoryPedidoFilter.includeOne && inventario === 1) return true;
+      if (window.inventoryPedidoFilter.includeAtMin && estaEnMinimo) return true;
       return false;
     }).length;
+  } else {
+    conPedido = rows.filter(r => r.PedidoSugerido > 0).length;
   }
   
   const conExceso = rows.filter(r => r.Exceso > 0).length;

@@ -20,11 +20,13 @@ if (typeof window.reportPageState === 'undefined') {
   };
 }
 
-// Estado del filtro de inventario para pedido (0, 1, ambos)
+// Estado del filtro de inventario para pedido
+// includeZero: true/false - incluir productos con inventario = 0
+// includeAtMin: true/false - incluir productos con inventario = minimo definido
 if (typeof window.inventoryPedidoFilter === 'undefined') {
   window.inventoryPedidoFilter = {
     includeZero: true,
-    includeOne: true
+    includeAtMin: true
   };
 }
 
@@ -39,6 +41,18 @@ function confirmDeleteProduct(sku, producto) {
   }
 }
 
+// Función para verificar si un producto está en su mínimo
+function isProductoEnMinimo(producto) {
+  const minimo = producto.Minimo;
+  const inventario = producto.Inventario;
+  
+  // Solo considerar si tiene mínimo definido y es un número válido
+  if (minimo !== undefined && minimo !== "" && minimo !== null && !isNaN(minimo)) {
+    return Number(inventario) === Number(minimo);
+  }
+  return false;
+}
+
 // Función para recalcular el total del pedido según el filtro de inventario seleccionado
 function recalcularTotalPorFiltroInventario() {
   if (!state.rows || state.rows.length === 0) return 0;
@@ -49,8 +63,13 @@ function recalcularTotalPorFiltroInventario() {
   // Aplicar filtro por nivel de inventario
   productosParaPedido = productosParaPedido.filter(r => {
     const inventario = r.Inventario;
+    
+    // Incluir inventario = 0
     if (window.inventoryPedidoFilter.includeZero && inventario === 0) return true;
-    if (window.inventoryPedidoFilter.includeOne && inventario === 1) return true;
+    
+    // Incluir productos en mínimo (inventario === minimo definido)
+    if (window.inventoryPedidoFilter.includeAtMin && isProductoEnMinimo(r)) return true;
+    
     return false;
   });
   
@@ -84,13 +103,13 @@ function recalcularTotalPorFiltroInventario() {
 function setInventoryPedidoFilter(value) {
   if (value === "zero") {
     window.inventoryPedidoFilter.includeZero = true;
-    window.inventoryPedidoFilter.includeOne = false;
-  } else if (value === "one") {
+    window.inventoryPedidoFilter.includeAtMin = false;
+  } else if (value === "atMin") {
     window.inventoryPedidoFilter.includeZero = false;
-    window.inventoryPedidoFilter.includeOne = true;
+    window.inventoryPedidoFilter.includeAtMin = true;
   } else if (value === "both") {
     window.inventoryPedidoFilter.includeZero = true;
-    window.inventoryPedidoFilter.includeOne = true;
+    window.inventoryPedidoFilter.includeAtMin = true;
   }
   
   // Recalcular el total mostrado
@@ -99,8 +118,8 @@ function setInventoryPedidoFilter(value) {
   // Mostrar notificación
   let mensaje = "";
   if (value === "zero") mensaje = "🔴 Mostrando solo productos con inventario = 0";
-  else if (value === "one") mensaje = "🟡 Mostrando solo productos con inventario = 1";
-  else mensaje = "🟠 Mostrando productos con inventario = 0 y 1";
+  else if (value === "atMin") mensaje = "🟡 Mostrando solo productos con inventario en su mínimo";
+  else mensaje = "🟠 Mostrando productos con inventario = 0 y en mínimo";
   
   mostrarNotificacion(mensaje, false);
 }
@@ -112,8 +131,10 @@ function getProductosParaExportar() {
   return state.rows.filter(r => {
     if (r.PedidoSugerido <= 0) return false;
     const inventario = r.Inventario;
+    
     if (window.inventoryPedidoFilter.includeZero && inventario === 0) return true;
-    if (window.inventoryPedidoFilter.includeOne && inventario === 1) return true;
+    if (window.inventoryPedidoFilter.includeAtMin && isProductoEnMinimo(r)) return true;
+    
     return false;
   });
 }
@@ -277,11 +298,12 @@ function renderTableDynamic(data, filterType) {
       if (col.key === "Inventario") {
         const invValue = (value === undefined || value === null || value === "") ? 0 : value;
         const hasMinMax = (r.Minimo && r.Minimo !== "") || (r.Maximo && r.Maximo !== "");
+        const estaEnMinimo = isProductoEnMinimo(r);
         
         if (invValue === 0) {
           displayValue = `<span style="color: var(--danger); font-weight: bold;">0</span>`;
-        } else if (invValue === 1) {
-          displayValue = `<span style="color: var(--warning); font-weight: bold;">1</span>`;
+        } else if (estaEnMinimo) {
+          displayValue = `<span style="color: var(--warning); font-weight: bold;">${Math.floor(invValue)} (mínimo)</span>`;
         } else {
           displayValue = Math.floor(invValue).toLocaleString("en-US");
         }

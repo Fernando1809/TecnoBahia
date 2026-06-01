@@ -85,6 +85,7 @@ function detectInventoryOrigin(workbook, fileName) {
   }
   return null;
 }
+
 /**
  * Formatea una fecha a string DD-MM-YYYY
  */

@@ -127,10 +127,10 @@ function exportResults() {
   
   if (productsToOrder.length === 0) {
     let mensaje = "";
-    if (window.inventoryPedidoFilter.includeZero && !window.inventoryPedidoFilter.includeOne) {
+    if (window.inventoryPedidoFilter.includeZero && !window.inventoryPedidoFilter.includeAtMin) {
       mensaje = "⚠️ No hay productos con inventario = 0 que requieran pedido.";
-    } else if (!window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeOne) {
-      mensaje = "⚠️ No hay productos con inventario = 1 que requieran pedido.";
+    } else if (!window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
+      mensaje = "⚠️ No hay productos con inventario en su mínimo que requieran pedido.";
     } else {
       mensaje = "⚠️ No hay productos que requieran pedido según el filtro seleccionado.";
     }
@@ -211,12 +211,12 @@ function exportResults() {
   
   // Indicar en el nombre qué filtro se usó
   let filtroTexto = "";
-  if (window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeOne) {
-    filtroTexto = " (stock 0 y 1)";
-  } else if (window.inventoryPedidoFilter.includeZero && !window.inventoryPedidoFilter.includeOne) {
+  if (window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
+    filtroTexto = " (stock 0 y en mínimo)";
+  } else if (window.inventoryPedidoFilter.includeZero && !window.inventoryPedidoFilter.includeAtMin) {
     filtroTexto = " (solo stock 0)";
-  } else if (!window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeOne) {
-    filtroTexto = " (solo stock 1)";
+  } else if (!window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
+    filtroTexto = " (solo stock en mínimo)";
   }
   
   const nombreArchivo = `${fechaFormateada} - Tecno Bahia - ${sucursal}${filtroTexto}.xlsx`;
@@ -224,17 +224,17 @@ function exportResults() {
   console.log("📄 Generando archivo:", nombreArchivo);
   console.log("💰 Subtotal sin IVA:", subtotalSinIva, "IVA:", iva, "TOTAL CON IVA:", totalConIva);
   console.log("📦 Productos incluidos:", productsToOrder.length);
-  console.log("🎯 Filtro aplicado - includeZero:", window.inventoryPedidoFilter.includeZero, "includeOne:", window.inventoryPedidoFilter.includeOne);
+  console.log("🎯 Filtro aplicado - includeZero:", window.inventoryPedidoFilter.includeZero, "includeAtMin:", window.inventoryPedidoFilter.includeAtMin);
   
   XLSX.writeFile(wb, nombreArchivo, { bookType: "xlsx", cellDates: true });
   
   let filtroDescripcion = "";
-  if (window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeOne) {
-    filtroDescripcion = "inventario 0 y 1";
-  } else if (window.inventoryPedidoFilter.includeZero && !window.inventoryPedidoFilter.includeOne) {
+  if (window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
+    filtroDescripcion = "inventario 0 y en mínimo";
+  } else if (window.inventoryPedidoFilter.includeZero && !window.inventoryPedidoFilter.includeAtMin) {
     filtroDescripcion = "inventario = 0";
   } else {
-    filtroDescripcion = "inventario = 1";
+    filtroDescripcion = "inventario en mínimo";
   }
   
   setStatus(`📁 Pedido descargado: ${productsToOrder.length} productos (${filtroDescripcion}). Total con IVA: $${totalConIva.toFixed(2)}`, false);
