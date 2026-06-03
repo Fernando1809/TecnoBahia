@@ -112,10 +112,16 @@ function setInventoryPedidoFilter(value) {
     window.inventoryPedidoFilter.includeAtMin = true;
   }
   
-  // Recalcular el total mostrado
+  const select = document.getElementById("inventoryPedidoSelect");
+  if (select) select.value = value;
+  
   recalcularTotalPorFiltroInventario();
   
-  // Mostrar notificación
+  if (state.activeFilter === "pedido") {
+    resetReportPagination();
+    applyFilterAndSearch();
+  }
+  
   let mensaje = "";
   if (value === "zero") mensaje = "🔴 Mostrando solo productos con inventario = 0";
   else if (value === "atMin") mensaje = "🟡 Mostrando solo productos con inventario en su mínimo";
@@ -292,7 +298,7 @@ function renderTableDynamic(data, filterType) {
                     onclick="confirmDeleteProduct('${escapeHtml(r.SKU)}', '${escapeHtml(r.Producto)}')">
                     🗑 Eliminar
                   </button>
-                  </td>`;
+                </td>`;
       }
       
       if (col.key === "Inventario") {
@@ -571,7 +577,17 @@ function applyFilterAndSearch() {
       const hasFullRule = (r.Minimo !== "" && r.Minimo !== undefined && r.Minimo !== null) &&
                           (r.Maximo !== "" && r.Maximo !== undefined && r.Maximo !== null);
       const hasPrice = (r.CostoUnitario !== null && r.CostoUnitario !== undefined && r.CostoUnitario > 0);
-      return hasFullRule && hasPrice && r.PedidoSugerido > 0;
+      const hasPedido = r.PedidoSugerido > 0;
+      
+      if (!(hasFullRule && hasPrice && hasPedido)) return false;
+      
+      const inventario = r.Inventario;
+      const estaEnMinimo = isProductoEnMinimo(r);
+      
+      if (window.inventoryPedidoFilter.includeZero && inventario === 0) return true;
+      if (window.inventoryPedidoFilter.includeAtMin && estaEnMinimo) return true;
+      
+      return false;
     });
   } else if (currentFilter === "exceso") {
     filtered = filtered.filter(r => {
@@ -607,7 +623,17 @@ function applyFilterAndSearch() {
   if (filterInfo) {
     let filterText = "";
     if (currentFilter === "all" || currentFilter === "todos") filterText = "Mostrando todos los productos";
-    else if (currentFilter === "pedido" || currentFilter === "pedir") filterText = `📦 Productos con pedido (${filtered.length} de ${state.rows.length})`;
+    else if (currentFilter === "pedido" || currentFilter === "pedir") {
+      let tipoFiltro = "";
+      if (window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
+        tipoFiltro = " (stock 0 y en mínimo)";
+      } else if (window.inventoryPedidoFilter.includeZero) {
+        tipoFiltro = " (solo stock 0)";
+      } else {
+        tipoFiltro = " (solo stock en mínimo)";
+      }
+      filterText = `📦 Productos con pedido${tipoFiltro} (${filtered.length} de ${state.rows.length})`;
+    }
     else if (currentFilter === "exceso") filterText = `⚠️ Productos en exceso (${filtered.length} de ${state.rows.length})`;
     else if (currentFilter === "ok") filterText = `✅ Productos dentro del rango (${filtered.length} de ${state.rows.length})`;
     else if (currentFilter === "zero") filterText = `🔴 Productos sin stock (${filtered.length} de ${state.rows.length})`;
