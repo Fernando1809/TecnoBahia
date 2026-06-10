@@ -363,10 +363,16 @@ async function persistRules() {
     }
   }
   
-  console.log(`💾 Guardando ${Object.keys(rulesWithValues).length} SKUs con reglas (de ${Object.keys(state.adminRules).length} totales)`);
+  console.log(`💾 Guardando ${Object.keys(rulesWithValues).length} SKUs con reglas en Firestore`);
+  console.log(`💾 Total SKUs en memoria: ${Object.keys(state.adminRules).length}`);
   
   // Guardar solo los que tienen reglas en Firestore
-  await firestoreSetDocData("adminRules", { adminRules: rulesWithValues });
+  try {
+    await firestoreSetDocData("adminRules", { adminRules: rulesWithValues });
+    console.log("✅ Reglas guardadas en Firestore");
+  } catch (err) {
+    console.error("❌ Error guardando en Firestore:", err);
+  }
   
   // Guardar los SKUs sin reglas en localStorage
   const skusSinReglas = {};
@@ -567,7 +573,7 @@ function addNewSku() {
 }
 
 // ============================================================
-// FUNCIÓN CORREGIDA: IMPORTAR REGLAS - VERSIÓN OPTIMIZADA
+// FUNCIÓN CORREGIDA: IMPORTAR REGLAS - NO OMITE NINGÚN SKU
 // ============================================================
 
 function importRulesExcel() {
@@ -622,13 +628,9 @@ function importRulesExcel() {
       let conReglas = 0;
       let sinReglas = 0;
       
-      // Preguntar si limpiar reglas existentes
-      const limpiarPrimero = confirm("¿Deseas limpiar las reglas existentes antes de cargar? (Recomendado)");
-      if (limpiarPrimero) {
-        state.adminRules = {};
-        localStorage.removeItem('tecnobahia_skus_sin_reglas');
-        console.log("🧹 Reglas existentes limpiadas");
-      }
+      // LIMPIAR TODO ANTES DE CARGAR
+      state.adminRules = {};
+      localStorage.removeItem('tecnobahia_skus_sin_reglas');
       
       // Recorrer todas las filas (DESDE LA FILA 1, saltando la fila 0 que son encabezados)
       for (let i = 1; i < rows.length; i++) {
