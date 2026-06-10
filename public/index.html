@@ -145,12 +145,11 @@
           <p style="margin:0;color:var(--muted);">Define mínimos y máximos por SKU globales del sistema</p>
         </div>
 
-        <div id="adminContent">
-          <div class="admin-actions" style="margin-bottom: 16px;">
-            <button id="btnSaveRules" class="btn-secondary">💾 Guardar reglas</button>
-            <button id="btnClearRules" class="btn-secondary">🗑️ Limpiar todas las reglas</button>
-          </div>
-          
+       <div class="admin-actions" style="margin-bottom: 16px;">
+  <button id="btnSaveRules" class="btn-secondary">💾 Guardar reglas</button>
+  <button id="btnClearRules" class="btn-secondary">🗑️ Limpiar SOLO reglas</button>
+  <button id="btnClearAllItems" class="btn-secondary" style="background: #dc2626; color: white;">🔥 ELIMINAR TODOS LOS SKUs</button>
+</div>
           <!-- PRECIOS -->
           <div class="row admin-tools">
             <input type="file" id="listaCompletaInput" accept=".xlsx,.xls,.xlsm" />
@@ -341,6 +340,7 @@
     document.getElementById("btnAddProductToOrder")?.addEventListener("click", openAddProductModal);
     document.getElementById("btnCloseModal")?.addEventListener("click", closeAddProductModal);
     document.getElementById("btnConfirmAddProduct")?.addEventListener("click", addProductToPedido);
+    document.getElementById("btnClearAllItems")?.addEventListener("click", clearAllItems);
     
     // Event listener para el select de filtro por inventario
     document.getElementById("inventoryPedidoSelect")?.addEventListener("change", (e) => {

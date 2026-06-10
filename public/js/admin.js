@@ -304,14 +304,33 @@ async function logoutAdmin() {
 }
 
 // ============================================================
-// SECCIÓN 3: REGLAS DE STOCK (KOLO)
+// SECCIÓN 3: REGLAS DE STOCK (KOLO) - VERSIÓN OPTIMIZADA
 // ============================================================
 
 async function loadRules() {
   try {
+    // Cargar reglas con valores desde Firestore
     const data = await firestoreGetDocData("adminRules");
-    state.adminRules = data.adminRules || {};
-    console.log("📋 Reglas KOLO cargadas desde Firestore:", Object.keys(state.adminRules).length);
+    const rulesWithValues = data.adminRules || {};
+    
+    // Cargar SKUs sin reglas desde localStorage
+    let skusSinReglas = {};
+    const savedSinReglas = localStorage.getItem('tecnobahia_skus_sin_reglas');
+    if (savedSinReglas) {
+      try {
+        skusSinReglas = JSON.parse(savedSinReglas);
+        console.log(`📦 Cargados ${Object.keys(skusSinReglas).length} SKUs sin reglas desde localStorage`);
+      } catch(e) {
+        console.warn("Error cargando SKUs sin reglas:", e);
+      }
+    }
+    
+    // Combinar ambos
+    state.adminRules = { ...skusSinReglas, ...rulesWithValues };
+    
+    console.log("📋 Reglas KOLO cargadas:", Object.keys(state.adminRules).length);
+    console.log(`   - Con reglas: ${Object.keys(rulesWithValues).length}`);
+    console.log(`   - Sin reglas: ${Object.keys(skusSinReglas).length}`);
     
     const metadata = await firestoreGetDocData("reglasMetadata");
     if (metadata && metadata.lastUpdate) {
@@ -333,8 +352,38 @@ async function loadRules() {
   }
 }
 
-async function persistRules() { 
-  await firestoreSetDocData("adminRules", { adminRules: state.adminRules }); 
+async function persistRules() {
+  // Filtrar solo SKUs que tienen reglas (mínimo o máximo definido)
+  const rulesWithValues = {};
+  for (const sku in state.adminRules) {
+    const rule = state.adminRules[sku];
+    if ((rule.minimo !== "" && rule.minimo !== null && rule.minimo !== undefined) || 
+        (rule.maximo !== "" && rule.maximo !== null && rule.maximo !== undefined)) {
+      rulesWithValues[sku] = rule;
+    }
+  }
+  
+  console.log(`💾 Guardando ${Object.keys(rulesWithValues).length} SKUs con reglas (de ${Object.keys(state.adminRules).length} totales)`);
+  
+  // Guardar solo los que tienen reglas en Firestore
+  await firestoreSetDocData("adminRules", { adminRules: rulesWithValues });
+  
+  // Guardar los SKUs sin reglas en localStorage
+  const skusSinReglas = {};
+  for (const sku in state.adminRules) {
+    const rule = state.adminRules[sku];
+    if ((rule.minimo === "" || rule.minimo === null || rule.minimo === undefined) && 
+        (rule.maximo === "" || rule.maximo === null || rule.maximo === undefined)) {
+      skusSinReglas[sku] = rule;
+    }
+  }
+  
+  if (Object.keys(skusSinReglas).length > 0) {
+    localStorage.setItem('tecnobahia_skus_sin_reglas', JSON.stringify(skusSinReglas));
+    console.log(`💾 ${Object.keys(skusSinReglas).length} SKUs sin reglas guardados en localStorage`);
+  } else {
+    localStorage.removeItem('tecnobahia_skus_sin_reglas');
+  }
 }
 
 function buildAdminSourceRows() {
@@ -442,7 +491,7 @@ function saveRulesFromInputs() {
     
     const hasMin = String(nextRules[sku].minimo).trim() !== "";
     const hasMax = String(nextRules[sku].maximo).trim() !== "";
-    if (!hasMin && !hasMax) delete nextRules[sku];
+    if (!hasMin && !hasMax && !nextRules[sku].producto) delete nextRules[sku];
   });
   
   state.adminRules = nextRules;
@@ -465,17 +514,20 @@ function saveRulesFromInputs() {
 
 function clearAllRules() {
   if (!state.adminUnlocked) return;
-  if (confirm("¿Eliminar TODAS las reglas de mínimos y máximos?")) {
-    state.adminRules = {};
+  if (confirm("⚠️ ¿Eliminar SOLO las reglas de mínimos y máximos?\n\nLos SKUs seguirán apareciendo, solo se eliminarán los valores de mínimo y máximo.")) {
+    for (const sku in state.adminRules) {
+      state.adminRules[sku].minimo = "";
+      state.adminRules[sku].maximo = "";
+    }
     persistRules();
     recalculateRows();
     applyAdminFilter();
     
-    reglasLastUpdate = null;
-    reglasFileName = null;
+    reglasLastUpdate = new Date();
+    reglasFileName = "Reglas eliminadas";
     updateReglasStatusDisplay();
     
-    setStatus("✅ Todas las reglas han sido eliminadas", false);
+    setStatus("✅ Los valores de mínimo y máximo han sido eliminados", false);
   }
 }
 
@@ -486,7 +538,7 @@ function addNewSku() {
   const skuTrim = newSku.trim();
   
   if (state.adminRules[skuTrim]) {
-    alert(`El SKU "${skuTrim}" ya tiene reglas creadas.`);
+    alert(`El SKU "${skuTrim}" ya existe.`);
     return;
   }
   
@@ -496,7 +548,7 @@ function addNewSku() {
     if (found) producto = found.DESCRIPCION;
   }
   
-  state.adminRules[skuTrim] = { minimo: "", maximo: "", producto: producto };
+  state.adminRules[skuTrim] = { minimo: "", maximo: "", producto: producto || skuTrim };
   persistRules();
   recalculateRows();
   applyAdminFilter();
@@ -514,117 +566,180 @@ function addNewSku() {
   setStatus(`✅ SKU "${skuTrim}" agregado.`, false);
 }
 
+// ============================================================
+// FUNCIÓN CORREGIDA: IMPORTAR REGLAS - VERSIÓN OPTIMIZADA
+// ============================================================
+
 function importRulesExcel() {
-  if (!state.adminUnlocked) return;
+  if (!state.adminUnlocked) {
+    alert("Debes iniciar sesión como administrador");
+    return;
+  }
+  
   const fileInput = document.getElementById("adminExcelInput");
   const file = fileInput.files[0];
-  if (!file) return;
+  
+  if (!file) {
+    alert("❌ Por favor selecciona un archivo Excel o CSV primero.");
+    return;
+  }
   
   const reader = new FileReader();
-  reader.onload = function(evt) {
+  reader.onload = async function(evt) {
     try {
+      let workbook;
       const data = new Uint8Array(evt.target.result);
-      const workbook = XLSX.read(data, { type: "array" });
+      workbook = XLSX.read(data, { type: 'array' });
+      
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
       
-      if (!aoa.length) return;
-      
-      let headerRowIndex = 0;
-      let skuIdx = -1, minIdx = -1, maxIdx = -1, prodIdx = -1;
-
-      for (let i = 0; i < Math.min(20, aoa.length); i++) {
-        const row = Array.isArray(aoa[i]) ? aoa[i] : [];
-        const joined = norm(row.join(" | "));
-        if ((joined.includes("sku") || joined.includes("codigo")) && (joined.includes("min") || joined.includes("max"))) {
-          headerRowIndex = i; 
-          row.forEach((cell, idx) => {
-            const cNorm = norm(String(cell || ""));
-            if (cNorm.includes("sku") || cNorm.includes("codigo")) skuIdx = idx;
-            if (cNorm.includes("min")) minIdx = idx;
-            if (cNorm.includes("max")) maxIdx = idx;
-            if (cNorm.includes("producto") || cNorm.includes("descripcion")) prodIdx = idx;
-          });
-          break;
-        }
-      }
-      
-      if (skuIdx === -1) {
-        alert("No se encontró la columna SKU o Código en el archivo.");
+      if (!rows || rows.length < 2) {
+        alert("El archivo no tiene datos");
         fileInput.value = "";
         return;
       }
       
-      let importedCount = 0;
-      let skippedNoRules = 0;
+      console.log("📋 Archivo cargado. Total filas:", rows.length);
       
-      for (let i = headerRowIndex + 1; i < aoa.length; i++) {
-        const rowArr = aoa[i] || [];
-        if (!rowArr.some(v => String(v || "").trim() !== "")) continue;
+      // ÍNDICES FIJOS para tu archivo CSV
+      // Formato: sku;item;minimo;maximo;notificar
+      const skuCol = 0;      // Columna 0 = SKU (código)
+      const prodCol = 1;     // Columna 1 = PRODUCTO/ITEM (nombre)
+      const minCol = 2;      // Columna 2 = MINIMO
+      const maxCol = 3;      // Columna 3 = MAXIMO
+      
+      console.log(`✅ Usando: SKU col ${skuCol}, Producto col ${prodCol}, Min col ${minCol}, Max col ${maxCol}`);
+      
+      // Verificar el primer dato real (fila 1)
+      const primeraFilaDato = rows[1];
+      if (primeraFilaDato) {
+        console.log(`📋 Primer SKU: "${primeraFilaDato[skuCol]}"`);
+        console.log(`📋 Primer Producto: "${primeraFilaDato[prodCol]}"`);
+      }
+      
+      let importedCount = 0;
+      let conReglas = 0;
+      let sinReglas = 0;
+      
+      // Preguntar si limpiar reglas existentes
+      const limpiarPrimero = confirm("¿Deseas limpiar las reglas existentes antes de cargar? (Recomendado)");
+      if (limpiarPrimero) {
+        state.adminRules = {};
+        localStorage.removeItem('tecnobahia_skus_sin_reglas');
+        console.log("🧹 Reglas existentes limpiadas");
+      }
+      
+      // Recorrer todas las filas (DESDE LA FILA 1, saltando la fila 0 que son encabezados)
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row) continue;
         
-        const sku = String(rowArr[skuIdx] || "").trim();
+        // Obtener SKU de la primera columna
+        let sku = "";
+        if (row[skuCol] !== undefined && row[skuCol] !== null && row[skuCol] !== "") {
+          sku = String(row[skuCol]).trim();
+        }
+        
         if (!sku) continue;
         
-        const minimo = minIdx !== -1 ? toNumOrNull(rowArr[minIdx]) : null;
-        const maximo = maxIdx !== -1 ? toNumOrNull(rowArr[maxIdx]) : null;
-        let producto = prodIdx !== -1 ? String(rowArr[prodIdx] || "").trim() : "";
-        
-        if (!producto && state.listaCompleta) {
-          const found = state.listaCompleta.find(item => item.CODIGO === sku);
-          if (found) producto = found.DESCRIPCION;
+        // Obtener nombre del producto de la segunda columna
+        let producto = "";
+        if (row[prodCol] !== undefined && row[prodCol] !== null && row[prodCol] !== "") {
+          producto = String(row[prodCol]).trim();
         }
         
-        if (minimo !== null && maximo !== null) {
-          // 🔥 BUSCAR EL NOMBRE DEL PRODUCTO DESDE LA LISTA DE PRECIOS
-          let nombreProducto = producto;
-          if (!nombreProducto && state.listaCompleta) {
-            const found = state.listaCompleta.find(item => item.CODIGO === sku);
-            if (found) nombreProducto = found.DESCRIPCION;
+        if (!producto) producto = sku;
+        
+        // Obtener mínimo de la tercera columna
+        let minimo = null;
+        if (row[minCol] !== undefined && row[minCol] !== null && row[minCol] !== "") {
+          const minVal = String(row[minCol]).trim();
+          if (minVal !== "" && !isNaN(Number(minVal))) {
+            minimo = Number(minVal);
           }
-          
-          state.adminRules[sku] = {
-            minimo: minimo,
-            maximo: maximo,
-            producto: nombreProducto || sku
-          };
-          importedCount++;
+        }
+        
+        // Obtener máximo de la cuarta columna
+        let maximo = null;
+        if (row[maxCol] !== undefined && row[maxCol] !== null && row[maxCol] !== "") {
+          const maxVal = String(row[maxCol]).trim();
+          if (maxVal !== "" && !isNaN(Number(maxVal))) {
+            maximo = Number(maxVal);
+          }
+        }
+        
+        // AGREGAR SIEMPRE el SKU, tenga o no reglas
+        state.adminRules[sku] = {
+          minimo: (minimo !== null && !isNaN(minimo)) ? minimo : "",
+          maximo: (maximo !== null && !isNaN(maximo)) ? maximo : "",
+          producto: producto
+        };
+        
+        importedCount++;
+        if (minimo !== null && maximo !== null) {
+          conReglas++;
         } else {
-          skippedNoRules++;
-          console.log(`⚠️ SKU omitido (sin Mín o Máx): ${sku}`);
+          sinReglas++;
+        }
+        
+        // Mostrar progreso cada 1000 SKUs
+        if (importedCount % 1000 === 0) {
+          console.log(`📦 Procesados ${importedCount} SKUs...`);
         }
       }
       
-      persistRules();
+      console.log(`✅ Total procesados: ${importedCount} SKUs`);
+      console.log(`📊 Con reglas: ${conReglas}`);
+      console.log(`📭 Sin reglas: ${sinReglas}`);
       
-      // ✅ SOLO recalcular si hay inventario cargado, pero NO cambiar el filtro
-      if (state.rows && state.rows.length > 0) {
-        recalculateRows();
+      // Guardar en Firestore (solo los que tienen reglas) y localStorage (los que no)
+      await persistRules();
+      
+      // Refrescar la tabla de admin
+      if (typeof applyAdminFilter === "function") {
+        applyAdminFilter();
       }
       
-      applyAdminFilter();
-      
-      reglasLastUpdate = new Date();
-      reglasFileName = file.name;
+      // Actualizar el contador
       updateReglasStatusDisplay();
       
-      firestoreSetDocData("reglasMetadata", {
+      // Guardar metadata
+      reglasLastUpdate = new Date();
+      reglasFileName = file.name;
+      
+      await firestoreSetDocData("reglasMetadata", {
         lastUpdate: reglasLastUpdate.toISOString(),
         fileName: file.name,
-        totalCount: importedCount
+        totalCount: Object.keys(state.adminRules).length
       }).catch(e => console.warn("No se pudo guardar metadata de reglas"));
       
+      // Limpiar el input
       fileInput.value = "";
       
-      let mensaje = `✅ Se importaron ${importedCount} reglas de inventario.`;
-      if (skippedNoRules > 0) {
-        mensaje += ` ⚠️ Se omitieron ${skippedNoRules} SKUs sin Mínimo o Máximo.`;
-      }
+      // Mostrar resumen
+      const mensaje = `✅ Procesados ${importedCount} SKUs.\n📊 Con reglas: ${conReglas}\n📭 Sin reglas: ${sinReglas}`;
       alert(mensaje);
       setStatus(mensaje, false);
       
-    } catch (err) { 
-      console.error("Error al procesar el archivo Excel de reglas:", err); 
-      setStatus("❌ Error al importar reglas", true);
+      // También actualizar listaCompleta para búsqueda
+      for (const sku in state.adminRules) {
+        if (!state.listaCompleta.some(item => item.CODIGO === sku)) {
+          state.listaCompleta.push({
+            CODIGO: sku,
+            DESCRIPCION: state.adminRules[sku].producto || sku,
+            PRECIO_SIN_IVA: state.preciosLookup[sku] || 0
+          });
+        }
+      }
+      
+      if (typeof saveListaCompleta === "function") {
+        await saveListaCompleta();
+      }
+      
+    } catch (err) {
+      console.error("Error al procesar el archivo:", err);
+      alert("Error al procesar el archivo: " + err.message);
       fileInput.value = "";
     }
   };
@@ -632,7 +747,7 @@ function importRulesExcel() {
 }
 
 // ============================================================
-// SECCIÓN 4: PRECIOS - VERSIÓN DEFINITIVA (SOLO SIN IVA)
+// SECCIÓN 4: PRECIOS
 // ============================================================
 
 async function clearAllPrices() {
@@ -663,7 +778,6 @@ async function loadListaCompleta() {
     state.listaCompleta = data.listaCompleta || [];
     state.preciosLookup = data.preciosLookup || {};
     
-    // Verificar si los precios guardados tienen IVA (valores sospechosamente altos)
     const muestra = Object.values(state.preciosLookup).slice(0, 5);
     const preciosAltos = muestra.some(p => p > 100);
     if (preciosAltos && state.listaCompleta.length > 0) {
@@ -791,7 +905,6 @@ async function importListaCompleta() {
         return;
       }
       
-      // LIMPIAR COMPLETAMENTE los datos anteriores
       state.listaCompleta = [];
       state.preciosLookup = {};
       let processedCount = 0;
@@ -804,10 +917,8 @@ async function importListaCompleta() {
         const codigo = String(rowArr[codigoCol] || "").trim().toUpperCase();
         const descripcion = descCol !== null ? String(rowArr[descCol] || "").trim() : "";
         
-        // PRECIO SIN IVA - DIRECTAMENTE DEL PAD
         let precioSinIva = toNum(rowArr[precioColPAD]);
         
-        // Verificar que el precio sea razonable (menor a 1000 es seguro que no tiene IVA duplicado)
         if (precioSinIva > 1000) {
           errores.push(`${codigo}: ${precioSinIva} - posible IVA incluido`);
         }
@@ -821,7 +932,6 @@ async function importListaCompleta() {
         };
         
         state.listaCompleta.push(item);
-        // Guardamos el precio SIN IVA en el lookup
         state.preciosLookup[codigo] = precioSinIva;
         processedCount++;
       }
@@ -1130,5 +1240,57 @@ function downloadKOLOTemplate() {
   
   if (typeof setStatus === "function") {
     setStatus("📥 Plantilla KOLO descargada. Completa los campos y súbela en KOLO.", false);
+  }
+}
+
+// ============================================================
+// FUNCIÓN PARA ELIMINAR TODOS LOS ITEMS (SKUs)
+// ============================================================
+
+async function clearAllItems() {
+  if (!state.adminUnlocked) return;
+  
+  const confirmed = confirm("⚠️ ¡ADVERTENCIA! ⚠️\n\nEsta acción ELIMINARÁ TODOS los SKUs del sistema.\n\nSe eliminarán:\n- Todos los SKUs (con o sin reglas)\n- Todas las reglas de mínimos y máximos\n\nEsta acción NO se puede deshacer.\n\n¿Estás SEGURO?");
+  
+  if (!confirmed) return;
+  
+  try {
+    setStatus("🗑️ Eliminando todos los SKUs...", false);
+    
+    state.adminRules = {};
+    localStorage.removeItem('tecnobahia_skus_sin_reglas');
+    
+    state.listaCompleta = [];
+    state.preciosLookup = {};
+    
+    await persistRules();
+    
+    await firestoreSetDocData("reglasMetadata", {
+      lastUpdate: new Date().toISOString(),
+      fileName: "Todos los SKUs eliminados",
+      totalCount: 0
+    }).catch(e => console.warn("No se pudo guardar metadata de reglas"));
+    
+    if (typeof saveListaCompleta === "function") {
+      await saveListaCompleta();
+    }
+    
+    recalculateRows();
+    applyAdminFilter();
+    
+    reglasLastUpdate = new Date();
+    reglasFileName = "Todos los SKUs eliminados";
+    updateReglasStatusDisplay();
+    
+    if (typeof applyFilterAndSearch === "function") {
+      applyFilterAndSearch();
+    }
+    
+    setStatus("✅ Todos los SKUs han sido eliminados del sistema", false);
+    mostrarNotificacion("✅ Se eliminaron todos los SKUs del sistema", false);
+    
+  } catch (error) {
+    console.error("Error al eliminar items:", error);
+    setStatus("❌ Error al eliminar los SKUs", true);
   }
 }
