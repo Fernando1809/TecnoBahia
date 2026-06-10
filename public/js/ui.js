@@ -115,7 +115,6 @@ function setInventoryPedidoFilter(value) {
   
   recalcularTotalPorFiltroInventario();
   
-  // Actualizar la tabla si estamos en el filtro de pedido
   if (state.activeFilter === "pedido") {
     resetReportPagination();
     applyFilterAndSearch();
@@ -230,7 +229,7 @@ function renderTableDynamic(data, filterType) {
   }).join('')}</tr>`;
 
   if (data.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="${columns.length}" style="text-align:center; padding:40px;">No hay productos que coincidan con el filtro seleccionado</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${columns.length}" style="text-align:center; padding:40px;">No hay productos que coincidan con el filtro seleccionado<\/td><\/tr>`;
     document.getElementById("reportPagination")?.remove();
     return;
   }
@@ -299,7 +298,7 @@ function renderTableDynamic(data, filterType) {
                     onclick="confirmDeleteProduct('${escapeHtml(r.SKU)}', '${escapeHtml(r.Producto)}')">
                     🗑 Eliminar
                   </button>
-                  </td>`;
+                  <\/td>`;
       }
       
       if (col.key === "Inventario") {
@@ -329,7 +328,7 @@ function renderTableDynamic(data, filterType) {
         if (value !== null && value !== "" && !isNaN(value) && value > 0) {
           displayValue = `$${fmt(value)}`;
         } else {
-          displayValue = `<span style="color: var(--warning);" title="Precio no definido">No definido</span>`;
+          displayValue = `<span style="color: var(--warning);" title="Precio no definido">Sin precio</span>`;
         }
       }
       else if (col.key === "CostoTotal") {
@@ -365,10 +364,10 @@ function renderTableDynamic(data, filterType) {
       const isNumeric = ["Inventario", "CostoUnitario", "PedidoSugerido", "CostoTotal", "Exceso", "Minimo", "Maximo"].includes(col.key);
       const styleAlign = isNumeric ? ' style="text-align: right;"' : '';
 
-      return `<td class="${className}"${styleAlign}>${displayValue}</td>`;
+      return `<td class="${className}"${styleAlign}>${displayValue}<\/td>`;
     }).join('');
 
-    return `<tr>${cells}</tr>`;
+    return `<tr>${cells}<\/tr>`;
   }).join('');
 
   renderReportPagination(totalPages, totalItems);
@@ -553,7 +552,7 @@ function handlePedidoSugeridoChange(event) {
 }
 
 // ============================================================
-// SECCIÓN 2: FILTROS Y BÚSQUEDA (CORREGIDO)
+// SECCIÓN 2: FILTROS Y BÚSQUEDA
 // ============================================================
 
 function applyFilterAndSearch() {
@@ -564,35 +563,28 @@ function applyFilterAndSearch() {
   const currentFilter = String(state.activeFilter || "todos").toLowerCase();
 
   console.log("🔍 Aplicando filtro:", currentFilter);
-  console.log("📊 Filtro inventario - includeZero:", window.inventoryPedidoFilter.includeZero);
-  console.log("📊 Filtro inventario - includeAtMin:", window.inventoryPedidoFilter.includeAtMin);
-  console.log("📊 Total rows antes de filtrar:", filtered.length);
+  console.log("📊 Total rows ANTES de filtrar:", filtered.length);
+  console.log("📊 Productos con PedidoSugerido > 0:", filtered.filter(r => r.PedidoSugerido > 0).length);
 
   if (currentFilter === "pedido" || currentFilter === "pedir") {
     filtered = filtered.filter(r => {
-      // CONDICIÓN PRINCIPAL: Debe tener pedido sugerido > 0
       if (r.PedidoSugerido <= 0) return false;
       
       const inventario = r.Inventario;
       const estaEnMinimo = isProductoEnMinimo(r);
       
-      // APLICAR FILTRO DE INVENTARIO SEGÚN SELECCIÓN DEL USUARIO
-      // Caso 1: Mostrar solo inventario = 0
+      // Los productos con inventario 0 SIEMPRE se muestran
+      if (inventario === 0) return true;
+      
       if (window.inventoryPedidoFilter.includeZero && !window.inventoryPedidoFilter.includeAtMin) {
         return inventario === 0;
       }
-      
-      // Caso 2: Mostrar solo inventario en mínimo
       if (!window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
         return estaEnMinimo;
       }
-      
-      // Caso 3: Mostrar ambos (stock 0 Y en mínimo)
       if (window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
         return (inventario === 0 || estaEnMinimo);
       }
-      
-      // Caso 4: Mostrar todos (ningún filtro activo)
       return true;
     });
   } else if (currentFilter === "exceso") {
@@ -622,7 +614,7 @@ function applyFilterAndSearch() {
     });
   }
 
-  console.log("📊 Total rows después de filtrar:", filtered.length);
+  console.log("📊 Total rows DESPUÉS de filtrar:", filtered.length);
   
   state.filtered = filtered;
   renderTableDynamic(filtered, currentFilter);
@@ -652,7 +644,7 @@ function applyFilterAndSearch() {
 }
 
 // ============================================================
-// SECCIÓN 3: MODAL PARA AGREGAR PRODUCTO
+// SECCIÓN 3: MODAL PARA AGREGAR PRODUCTO (VERSIÓN CORREGIDA)
 // ============================================================
 
 let selectedProductForOrder = null;
@@ -776,12 +768,13 @@ function renderSearchResults(results) {
   }
   
   resultsDiv.innerHTML = results.map(item => {
-    const precioMostrar = item.Precio > 0 ? `$${fmt(item.Precio)}` : 'Sin precio';
+    const precioMostrar = item.Precio > 0 ? `$${fmt(item.Precio)}` : '<span style="color: var(--warning);">Sin precio</span>';
+    const sourceIcon = item.source === "precios" ? "💰" : (item.source === "reglas" ? "📋" : "📦");
     return `
       <div class="search-result-item" data-sku="${escapeHtml(item.SKU)}" data-name="${escapeHtml(item.Producto)}" data-price="${item.Precio}">
-        <div><strong>${escapeHtml(item.SKU)}</strong></div>
-        <div style="font-size: 12px;">${escapeHtml(item.Producto)}</div>
-        <div style="font-size: 11px; color: var(--muted);">${precioMostrar}</div>
+        <div class="search-result-sku"><strong>${escapeHtml(item.SKU)}</strong> <span style="font-size: 10px;">${sourceIcon}</span></div>
+        <div class="search-result-name">${escapeHtml(item.Producto)}</div>
+        <div class="search-result-price">${precioMostrar}</div>
       </div>
     `;
   }).join('');
@@ -805,6 +798,7 @@ function renderSearchResults(results) {
   resultsDiv.style.display = "block";
 }
 
+// FUNCIÓN CORREGIDA - AHORA SÍ AGREGA LOS PRODUCTOS CON PRECIO
 function addProductToPedido() {
   if (!selectedProductForOrder) {
     setStatus("Selecciona un producto primero.", true);
@@ -819,14 +813,29 @@ function addProductToPedido() {
   }
   
   const sku = selectedProductForOrder.SKU;
-  const precio = selectedProductForOrder.CostoUnitario;
+  let precio = selectedProductForOrder.CostoUnitario;
   const producto = selectedProductForOrder.Producto;
+  
+  // SI EL PRECIO ES 0 O NULO, PEDIR AL USUARIO QUE INGRESE UN PRECIO
+  if (!precio || precio === 0) {
+    const precioIngresado = prompt(`El producto "${sku}" no tiene precio definido.\nIngresa el precio unitario SIN IVA:`);
+    if (precioIngresado === null) {
+      setStatus("Operación cancelada", true);
+      return;
+    }
+    precio = parseFloat(precioIngresado);
+    if (isNaN(precio) || precio <= 0) {
+      setStatus("Precio inválido. Debe ser un número mayor a 0.", true);
+      return;
+    }
+  }
   
   console.log("📦 Agregando producto manual:", { sku, precio, producto, cantidad });
   
-  // Agregar a listaCompleta
+  // 1. Agregar a listaCompleta con el precio
   if (!state.listaCompleta) state.listaCompleta = [];
-  if (!state.listaCompleta.some(item => item.CODIGO === sku)) {
+  const existingInLista = state.listaCompleta.find(item => item.CODIGO === sku);
+  if (!existingInLista) {
     state.listaCompleta.push({
       CODIGO: sku,
       DESCRIPCION: producto,
@@ -835,9 +844,14 @@ function addProductToPedido() {
     if (!state.preciosLookup) state.preciosLookup = {};
     state.preciosLookup[sku] = precio;
     if (typeof saveListaCompleta === "function") saveListaCompleta();
+  } else {
+    // Actualizar precio si ya existe
+    existingInLista.PRECIO_SIN_IVA = precio;
+    state.preciosLookup[sku] = precio;
+    if (typeof saveListaCompleta === "function") saveListaCompleta();
   }
   
-  // Agregar a adminRules
+  // 2. Agregar a adminRules
   if (!state.adminRules) state.adminRules = {};
   if (!state.adminRules[sku]) {
     state.adminRules[sku] = {
@@ -846,9 +860,13 @@ function addProductToPedido() {
       producto: producto
     };
     if (typeof persistRules === "function") persistRules();
+  } else {
+    // Actualizar producto si es necesario
+    if (!state.adminRules[sku].producto) state.adminRules[sku].producto = producto;
+    if (typeof persistRules === "function") persistRules();
   }
   
-  // Agregar a state.rows
+  // 3. Agregar o actualizar en state.rows
   if (!state.rows) state.rows = [];
   const existingRow = state.rows.find(r => r.SKU === sku);
   
@@ -856,31 +874,39 @@ function addProductToPedido() {
     existingRow.PedidoSugerido = cantidad;
     existingRow.CostoTotal = precio * cantidad;
     existingRow.Estado = "PEDIR";
+    existingRow.CostoUnitario = precio;
+    existingRow.Inventario = 0;
     existingRow.Minimo = state.adminRules[sku]?.minimo ?? "";
     existingRow.Maximo = state.adminRules[sku]?.maximo ?? "";
     if (!existingRow.Producto || existingRow.Producto === "Sin nombre") {
       existingRow.Producto = producto;
     }
+    console.log("✏️ Producto actualizado:", existingRow);
   } else {
-    state.rows.push({
+    const newRow = {
       SKU: sku,
       Producto: producto,
       Inventario: 0,
       CostoUnitario: precio,
-      Minimo: state.adminRules[sku]?.minimo ?? "",
-      Maximo: state.adminRules[sku]?.maximo ?? "",
+      Minimo: state.adminRules[sku]?.minimo ?? 0,
+      Maximo: state.adminRules[sku]?.maximo ?? cantidad,
       ConsumoMensual: 0,
       PedidoSugerido: cantidad,
       CostoTotal: precio * cantidad,
       Exceso: 0,
       Estado: "PEDIR"
-    });
+    };
+    state.rows.push(newRow);
+    console.log("➕ Nuevo producto agregado:", newRow);
   }
   
-  // Forzar recalculación
+  console.log("📊 Total products en state.rows:", state.rows.length);
+  console.log("📊 Productos con PedidoSugerido > 0:", state.rows.filter(r => r.PedidoSugerido > 0).length);
+  
+  // 4. Forzar recalculación
   if (typeof recalculateRows === "function") recalculateRows();
   
-  // Cambiar al filtro de pedido
+  // 5. Cambiar al filtro de pedido
   state.activeFilter = "pedido";
   const chips = document.querySelectorAll(".filter-chip");
   chips.forEach(chip => {
@@ -891,15 +917,26 @@ function addProductToPedido() {
     }
   });
   
+  // 6. Resetear paginación
   resetReportPagination();
+  
+  // 7. Actualizar métricas
   if (typeof updateMetrics === "function") updateMetrics(state.rows);
+  
+  // 8. Recalcular total
   recalcularTotalPorFiltroInventario();
+  
+  // 9. Aplicar filtros y actualizar tabla
   applyFilterAndSearch();
   
+  // 10. Cerrar modal
   closeAddProductModal();
+  
+  // 11. Actualizar botón de exportación
   if (typeof updateExportButtonState === "function") updateExportButtonState();
   
-  setStatus(`✅ Producto agregado: ${sku} - ${cantidad} unidades`, false);
+  setStatus(`✅ Producto agregado: ${sku} - ${cantidad} unidades a $${precio} c/u`, false);
+  mostrarNotificacion(`✅ "${producto}" agregado al pedido (${cantidad} unidades a $${precio})`, false);
 }
 
 function initManualProductModal() {
@@ -909,7 +946,10 @@ function initManualProductModal() {
   const searchInput = document.getElementById("searchProductInput");
   const modal = document.getElementById("modalAddProduct");
   
-  if (!addBtn) return;
+  if (!addBtn) {
+    console.warn("⚠️ Botón btnAddProductToOrder no encontrado");
+    return;
+  }
   
   addBtn.addEventListener("click", openAddProductModal);
   if (closeBtn) closeBtn.addEventListener("click", closeAddProductModal);
@@ -931,6 +971,13 @@ function initManualProductModal() {
       if (e.target === modal) closeAddProductModal();
     });
   }
+  
+  const cantidadInput = document.getElementById("manualPedidoCantidad");
+  if (cantidadInput) {
+    cantidadInput.addEventListener("keypress", (e) => {
+      if (e.key === "Enter" && confirmBtn && !confirmBtn.disabled) addProductToPedido();
+    });
+  }
 }
 
 // ============================================================
@@ -943,7 +990,7 @@ function renderAdminTable(data) {
   tbody.innerHTML = "";
   
   if (data.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px;">No hay SKUs registrados</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px;">No hay SKUs registrados<\/td><\/tr>';
     return;
   }
   
@@ -951,11 +998,11 @@ function renderAdminTable(data) {
     const tr = document.createElement("tr");
     const nombreProducto = r.Producto && r.Producto !== "" ? r.Producto : "Sin nombre";
     tr.innerHTML = `
-        <td>${escapeHtml(r.SKU)}</td>
-        <td>${escapeHtml(nombreProducto)}</td>
-        <td><input type="number" min="0" step="1" data-role="min" data-sku="${escapeHtml(r.SKU)}" value="${escapeHtml(r.Minimo)}" style="width:90px;"></td>
-        <td><input type="number" min="0" step="1" data-role="max" data-sku="${escapeHtml(r.SKU)}" value="${escapeHtml(r.Maximo)}" style="width:90px;"></td>
-        <td><button class="btn-secondary" style="background:var(--danger); color:white; padding:4px 8px;" data-delete-sku="${escapeHtml(r.SKU)}">🗑</button></td>
+        <td>${escapeHtml(r.SKU)}<\/td>
+        <td>${escapeHtml(nombreProducto)}<\/td>
+        <td><input type="number" min="0" step="1" data-role="min" data-sku="${escapeHtml(r.SKU)}" value="${escapeHtml(r.Minimo)}" style="width:90px;"><\/td>
+        <td><input type="number" min="0" step="1" data-role="max" data-sku="${escapeHtml(r.SKU)}" value="${escapeHtml(r.Maximo)}" style="width:90px;"><\/td>
+        <td><button class="btn-secondary" style="background:var(--danger); color:white; padding:4px 8px;" data-delete-sku="${escapeHtml(r.SKU)}">🗑<\/button><\/td>
     `;
     tbody.appendChild(tr);
   });
