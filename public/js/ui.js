@@ -298,7 +298,7 @@ function renderTableDynamic(data, filterType) {
                     onclick="confirmDeleteProduct('${escapeHtml(r.SKU)}', '${escapeHtml(r.Producto)}')">
                     🗑 Eliminar
                   </button>
-                 </td>`;
+                  </td>`;
       }
       
       if (col.key === "Inventario") {
@@ -640,7 +640,7 @@ function applyFilterAndSearch() {
 }
 
 // ============================================================
-// SECCIÓN 3: MODAL PARA AGREGAR PRODUCTO
+// SECCIÓN 3: MODAL PARA AGREGAR PRODUCTO (VERSIÓN CORREGIDA)
 // ============================================================
 
 let selectedProductForOrder = null;
@@ -673,12 +673,15 @@ function closeAddProductModal() {
   selectedProductForOrder = null;
 }
 
-// FUNCIÓN CORREGIDA: Busca en adminRules, listaCompleta y state.rows
 function searchProductsInListaCompleta(searchTerm) {
   if (!searchTerm || searchTerm.length < 2) return [];
   
   const term = searchTerm.toLowerCase().trim();
   const resultsMap = new Map();
+  
+  console.log("🔍 Buscando productos con término:", term);
+  console.log("📊 state.adminRules size:", state.adminRules ? Object.keys(state.adminRules).length : 0);
+  console.log("📊 state.listaCompleta size:", state.listaCompleta ? state.listaCompleta.length : 0);
   
   // 1. BUSCAR EN adminRules (la fuente principal de SKUs después de cargar reglas)
   if (state.adminRules && Object.keys(state.adminRules).length) {
@@ -690,7 +693,7 @@ function searchProductsInListaCompleta(searchTerm) {
           resultsMap.set(sku, {
             SKU: sku,
             Producto: state.adminRules[sku].producto || sku,
-            Precio: state.preciosLookup[sku] || 0,
+            Precio: state.preciosLookup ? (state.preciosLookup[sku] || 0) : 0,
             source: "reglas"
           });
         }
@@ -708,7 +711,7 @@ function searchProductsInListaCompleta(searchTerm) {
           resultsMap.set(item.CODIGO, {
             SKU: item.CODIGO,
             Producto: item.DESCRIPCION,
-            Precio: item.PRECIO_SIN_IVA,
+            Precio: item.PRECIO_SIN_IVA || 0,
             source: "precios"
           });
         }
@@ -726,7 +729,7 @@ function searchProductsInListaCompleta(searchTerm) {
           resultsMap.set(row.SKU, {
             SKU: row.SKU,
             Producto: row.Producto || row.SKU,
-            Precio: row.CostoUnitario || state.preciosLookup[row.SKU] || 0,
+            Precio: row.CostoUnitario || (state.preciosLookup ? state.preciosLookup[row.SKU] : 0) || 0,
             source: "inventario"
           });
         }
@@ -735,6 +738,7 @@ function searchProductsInListaCompleta(searchTerm) {
   }
   
   const results = Array.from(resultsMap.values());
+  console.log("🔍 Resultados encontrados:", results.length);
   
   results.sort((a, b) => {
     if (a.Precio > 0 && b.Precio === 0) return -1;
@@ -788,6 +792,7 @@ function renderSearchResults(results) {
   resultsDiv.style.display = "block";
 }
 
+// FUNCIÓN CORREGIDA PARA AGREGAR PRODUCTO MANUALMENTE
 function addProductToPedido() {
   if (!selectedProductForOrder) {
     setStatus("Selecciona un producto primero.", true);
@@ -805,42 +810,61 @@ function addProductToPedido() {
   const precio = selectedProductForOrder.CostoUnitario;
   const producto = selectedProductForOrder.Producto;
   
-  // Si el SKU no está en listaCompleta, agregarlo
+  console.log("📦 Agregando producto manual:", { sku, precio, producto, cantidad });
+  
+  // 1. Verificar/Agregar a listaCompleta
+  if (!state.listaCompleta) state.listaCompleta = [];
   const existsInLista = state.listaCompleta.some(item => item.CODIGO === sku);
   if (!existsInLista) {
+    console.log("➕ Agregando a listaCompleta:", sku);
     state.listaCompleta.push({
       CODIGO: sku,
       DESCRIPCION: producto,
       PRECIO_SIN_IVA: precio
     });
+    if (!state.preciosLookup) state.preciosLookup = {};
     state.preciosLookup[sku] = precio;
     if (typeof saveListaCompleta === "function") {
       saveListaCompleta();
     }
   }
   
-  // Si el SKU no está en adminRules, agregarlo también
-  if (typeof state.adminRules !== 'undefined') {
-    if (!state.adminRules[sku]) {
-      state.adminRules[sku] = {
-        minimo: "",
-        maximo: "",
-        producto: producto
-      };
-      if (typeof persistRules === "function") {
-        persistRules();
-      }
+  // 2. Verificar/Agregar a adminRules
+  if (!state.adminRules) state.adminRules = {};
+  if (!state.adminRules[sku]) {
+    console.log("➕ Agregando a adminRules:", sku);
+    state.adminRules[sku] = {
+      minimo: "",
+      maximo: "",
+      producto: producto
+    };
+    if (typeof persistRules === "function") {
+      persistRules();
+    }
+  } else if (!state.adminRules[sku].producto || state.adminRules[sku].producto === "") {
+    // Si existe pero sin producto, actualizar
+    state.adminRules[sku].producto = producto;
+    if (typeof persistRules === "function") {
+      persistRules();
     }
   }
   
+  // 3. Buscar si ya existe en state.rows
+  if (!state.rows) state.rows = [];
   const existingRow = state.rows.find(r => r.SKU === sku);
   
   if (existingRow) {
+    console.log("✏️ Actualizando producto existente:", sku);
     existingRow.PedidoSugerido = cantidad;
     existingRow.CostoTotal = precio * cantidad;
     existingRow.Estado = "PEDIR";
+    // Actualizar nombre si era "Sin nombre"
+    if (existingRow.Producto === "Sin nombre" || existingRow.Producto === sku || !existingRow.Producto) {
+      existingRow.Producto = producto;
+    }
     setStatus(`Actualizado: ${sku} - ${cantidad} unidades`, false);
   } else {
+    console.log("➕ Creando nuevo producto:", sku);
     const newRow = {
       SKU: sku,
       Producto: producto,
@@ -858,6 +882,13 @@ function addProductToPedido() {
     setStatus(`Agregado: ${sku} - ${cantidad} unidades`, false);
   }
   
+  // 4. FORZAR RECALCULACIÓN COMPLETA
+  console.log("🔄 Forzando recalculación...");
+  if (typeof recalculateRows === "function") {
+    recalculateRows();
+  }
+  
+  // 5. Cambiar al filtro de pedido
   state.activeFilter = "pedido";
   const chips = document.querySelectorAll(".filter-chip");
   chips.forEach(chip => {
@@ -868,12 +899,14 @@ function addProductToPedido() {
     }
   });
   
+  // 6. Resetear paginación
   if (typeof resetReportPagination === "function") {
     resetReportPagination();
   } else if (window.reportPageState) {
     window.reportPageState.currentPage = 1;
   }
   
+  // 7. Actualizar métricas y totales
   if (typeof updateMetrics === "function") {
     updateMetrics(state.rows);
   }
@@ -882,19 +915,26 @@ function addProductToPedido() {
     recalcularTotalPorFiltroInventario();
   }
   
+  // 8. Aplicar filtros
   if (typeof applyFilterAndSearch === "function") {
     applyFilterAndSearch();
   }
   
+  // 9. Refrescar admin si es necesario
   if (typeof applyAdminFilter === "function" && state.currentView === "admin") {
     setTimeout(() => applyAdminFilter(), 100);
   }
   
+  // 10. Cerrar modal
   closeAddProductModal();
   
+  // 11. Actualizar botón de exportación
   if (typeof updateExportButtonState === "function") {
     updateExportButtonState();
   }
+  
+  console.log("✅ Producto agregado exitosamente");
+  console.log("📊 Total productos en state.rows:", state.rows.length);
 }
 
 function initManualProductModal() {
@@ -904,7 +944,10 @@ function initManualProductModal() {
   const searchInput = document.getElementById("searchProductInput");
   const modal = document.getElementById("modalAddProduct");
   
-  if (!addBtn) return;
+  if (!addBtn) {
+    console.warn("⚠️ Botón btnAddProductToOrder no encontrado");
+    return;
+  }
   
   addBtn.addEventListener("click", openAddProductModal);
   if (closeBtn) closeBtn.addEventListener("click", closeAddProductModal);
