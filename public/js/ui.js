@@ -298,7 +298,7 @@ function renderTableDynamic(data, filterType) {
                     onclick="confirmDeleteProduct('${escapeHtml(r.SKU)}', '${escapeHtml(r.Producto)}')">
                     🗑 Eliminar
                   </button>
-                </td>`;
+                 </td>`;
       }
       
       if (col.key === "Inventario") {
@@ -381,7 +381,6 @@ function renderTableDynamic(data, filterType) {
     // Prevenir propagación de eventos de teclado
     input.addEventListener('keydown', function(e) {
       e.stopPropagation();
-      // Permitir solo teclas numéricas y de control
       const allowedKeys = ['Backspace', 'Delete', 'Tab', 'Enter', 'ArrowUp', 'ArrowDown', 'Home', 'End'];
       if (!allowedKeys.includes(e.key) && !/^[0-9]$/.test(e.key)) {
         e.preventDefault();
@@ -555,7 +554,6 @@ function handlePedidoSugeridoChange(event) {
   }
 
   updateMetrics(state.rows);
-  // Recalcular el total según el filtro de inventario actual
   recalcularTotalPorFiltroInventario();
   applyFilterAndSearch();
 }
@@ -675,17 +673,76 @@ function closeAddProductModal() {
   selectedProductForOrder = null;
 }
 
+// FUNCIÓN CORREGIDA: Busca en adminRules, listaCompleta y state.rows
 function searchProductsInListaCompleta(searchTerm) {
   if (!searchTerm || searchTerm.length < 2) return [];
   
   const term = searchTerm.toLowerCase().trim();
-  const results = state.listaCompleta.filter(item => {
-    const codigo = (item.CODIGO || "").toLowerCase();
-    const descripcion = (item.DESCRIPCION || "").toLowerCase();
-    return codigo.includes(term) || descripcion.includes(term);
+  const resultsMap = new Map();
+  
+  // 1. BUSCAR EN adminRules (la fuente principal de SKUs después de cargar reglas)
+  if (state.adminRules && Object.keys(state.adminRules).length) {
+    Object.keys(state.adminRules).forEach(sku => {
+      const skuLower = sku.toLowerCase();
+      const producto = (state.adminRules[sku].producto || "").toLowerCase();
+      if (skuLower.includes(term) || producto.includes(term)) {
+        if (!resultsMap.has(sku)) {
+          resultsMap.set(sku, {
+            SKU: sku,
+            Producto: state.adminRules[sku].producto || sku,
+            Precio: state.preciosLookup[sku] || 0,
+            source: "reglas"
+          });
+        }
+      }
+    });
+  }
+  
+  // 2. BUSCAR EN listaCompleta (precios)
+  if (state.listaCompleta && state.listaCompleta.length) {
+    state.listaCompleta.forEach(item => {
+      const codigo = (item.CODIGO || "").toLowerCase();
+      const descripcion = (item.DESCRIPCION || "").toLowerCase();
+      if (codigo.includes(term) || descripcion.includes(term)) {
+        if (!resultsMap.has(item.CODIGO)) {
+          resultsMap.set(item.CODIGO, {
+            SKU: item.CODIGO,
+            Producto: item.DESCRIPCION,
+            Precio: item.PRECIO_SIN_IVA,
+            source: "precios"
+          });
+        }
+      }
+    });
+  }
+  
+  // 3. BUSCAR EN state.rows (inventario cargado)
+  if (state.rows && state.rows.length) {
+    state.rows.forEach(row => {
+      const skuLower = (row.SKU || "").toLowerCase();
+      const producto = (row.Producto || "").toLowerCase();
+      if (skuLower.includes(term) || producto.includes(term)) {
+        if (!resultsMap.has(row.SKU)) {
+          resultsMap.set(row.SKU, {
+            SKU: row.SKU,
+            Producto: row.Producto || row.SKU,
+            Precio: row.CostoUnitario || state.preciosLookup[row.SKU] || 0,
+            source: "inventario"
+          });
+        }
+      }
+    });
+  }
+  
+  const results = Array.from(resultsMap.values());
+  
+  results.sort((a, b) => {
+    if (a.Precio > 0 && b.Precio === 0) return -1;
+    if (a.Precio === 0 && b.Precio > 0) return 1;
+    return a.SKU.localeCompare(b.SKU);
   });
   
-  return results.slice(0, 20);
+  return results.slice(0, 50);
 }
 
 function renderSearchResults(results) {
@@ -698,13 +755,17 @@ function renderSearchResults(results) {
     return;
   }
   
-  resultsDiv.innerHTML = results.map(item => `
-    <div class="search-result-item" data-sku="${escapeHtml(item.CODIGO)}" data-name="${escapeHtml(item.DESCRIPCION)}" data-price="${item.PRECIO_SIN_IVA}">
-      <div class="search-result-sku">${escapeHtml(item.CODIGO)}</div>
-      <div class="search-result-name">${escapeHtml(item.DESCRIPCION)}</div>
-      <div class="search-result-price">$${fmt(item.PRECIO_SIN_IVA)}</div>
-    </div>
-  `).join('');
+  resultsDiv.innerHTML = results.map(item => {
+    const precioMostrar = item.Precio > 0 ? `$${fmt(item.Precio)}` : '<span style="color: var(--warning);">Sin precio</span>';
+    const sourceIcon = item.source === "precios" ? "💰" : (item.source === "reglas" ? "📋" : "📦");
+    return `
+      <div class="search-result-item" data-sku="${escapeHtml(item.SKU)}" data-name="${escapeHtml(item.Producto)}" data-price="${item.Precio}">
+        <div class="search-result-sku"><strong>${escapeHtml(item.SKU)}</strong> <span style="font-size: 10px;">${sourceIcon}</span></div>
+        <div class="search-result-name">${escapeHtml(item.Producto)}</div>
+        <div class="search-result-price">${precioMostrar}</div>
+      </div>
+    `;
+  }).join('');
   
   resultsDiv.querySelectorAll('.search-result-item').forEach(el => {
     el.addEventListener('click', () => {
@@ -714,11 +775,13 @@ function renderSearchResults(results) {
       selectedProductForOrder = {
         SKU: el.getAttribute('data-sku'),
         Producto: el.getAttribute('data-name'),
-        CostoUnitario: parseFloat(el.getAttribute('data-price'))
+        CostoUnitario: parseFloat(el.getAttribute('data-price')) || 0
       };
       
       const confirmBtn = document.getElementById("btnConfirmAddProduct");
-      if (confirmBtn) confirmBtn.disabled = false;
+      if (confirmBtn) {
+        confirmBtn.disabled = false;
+      }
     });
   });
   
@@ -741,6 +804,34 @@ function addProductToPedido() {
   const sku = selectedProductForOrder.SKU;
   const precio = selectedProductForOrder.CostoUnitario;
   const producto = selectedProductForOrder.Producto;
+  
+  // Si el SKU no está en listaCompleta, agregarlo
+  const existsInLista = state.listaCompleta.some(item => item.CODIGO === sku);
+  if (!existsInLista) {
+    state.listaCompleta.push({
+      CODIGO: sku,
+      DESCRIPCION: producto,
+      PRECIO_SIN_IVA: precio
+    });
+    state.preciosLookup[sku] = precio;
+    if (typeof saveListaCompleta === "function") {
+      saveListaCompleta();
+    }
+  }
+  
+  // Si el SKU no está en adminRules, agregarlo también
+  if (typeof state.adminRules !== 'undefined') {
+    if (!state.adminRules[sku]) {
+      state.adminRules[sku] = {
+        minimo: "",
+        maximo: "",
+        producto: producto
+      };
+      if (typeof persistRules === "function") {
+        persistRules();
+      }
+    }
+  }
   
   const existingRow = state.rows.find(r => r.SKU === sku);
   
@@ -777,12 +868,33 @@ function addProductToPedido() {
     }
   });
   
-  resetReportPagination();
-  updateMetrics(state.rows);
-  recalcularTotalPorFiltroInventario();
-  applyFilterAndSearch();
+  if (typeof resetReportPagination === "function") {
+    resetReportPagination();
+  } else if (window.reportPageState) {
+    window.reportPageState.currentPage = 1;
+  }
+  
+  if (typeof updateMetrics === "function") {
+    updateMetrics(state.rows);
+  }
+  
+  if (typeof recalcularTotalPorFiltroInventario === "function") {
+    recalcularTotalPorFiltroInventario();
+  }
+  
+  if (typeof applyFilterAndSearch === "function") {
+    applyFilterAndSearch();
+  }
+  
+  if (typeof applyAdminFilter === "function" && state.currentView === "admin") {
+    setTimeout(() => applyAdminFilter(), 100);
+  }
+  
   closeAddProductModal();
-  if (typeof updateExportButtonState === "function") updateExportButtonState();
+  
+  if (typeof updateExportButtonState === "function") {
+    updateExportButtonState();
+  }
 }
 
 function initManualProductModal() {
@@ -944,7 +1056,6 @@ function autoSwitchToPedidoFilter() {
     return;
   }
   
-  // Contar cuántos productos tienen pedido (con reglas completas y precio)
   const productosConPedido = state.rows.filter(r => {
     const hasFullRule = (r.Minimo !== "" && r.Minimo !== undefined && r.Minimo !== null) &&
                         (r.Maximo !== "" && r.Maximo !== undefined && r.Maximo !== null);
@@ -954,14 +1065,10 @@ function autoSwitchToPedidoFilter() {
   
   console.log(`📦 Productos con pedido: ${productosConPedido}`);
   
-  // Cambiar el filtro activo a "pedido"
   state.activeFilter = "pedido";
   console.log("✅ state.activeFilter cambiado a:", state.activeFilter);
   
-  // Actualizar los chips visualmente
   const chips = document.querySelectorAll(".filter-chip");
-  console.log("🔘 Chips encontrados:", chips.length);
-  
   let chipPedidoEncontrado = false;
   chips.forEach(chip => {
     const filterValue = chip.getAttribute("data-filter");
@@ -978,26 +1085,20 @@ function autoSwitchToPedidoFilter() {
     console.warn("⚠️ No se encontró el chip con data-filter='pedido'");
   }
   
-  // Resetear paginación y aplicar filtro
   if (typeof resetReportPagination === "function") {
     resetReportPagination();
     console.log("✅ Paginación reseteada");
   } else {
-    console.warn("⚠️ resetReportPagination no encontrada");
     if (window.reportPageState) window.reportPageState.currentPage = 1;
   }
   
   if (typeof applyFilterAndSearch === "function") {
     applyFilterAndSearch();
     console.log("✅ Filtro aplicado");
-  } else {
-    console.error("❌ applyFilterAndSearch no encontrada");
   }
   
-  // Recalcular total según filtro de inventario
   recalcularTotalPorFiltroInventario();
   
-  // Mostrar notificación
   if (productosConPedido === 0) {
     mostrarNotificacion("📊 No hay productos que requieran pedido en este momento.\nVerifica que tengas precios cargados y reglas definidas.", true);
   } else {

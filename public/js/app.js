@@ -33,6 +33,7 @@ function handleFile(e) {
       
       state.inventoryOrigin = detectInventoryOrigin(workbook, file.name);
       
+      // ✅ IMPORTANTE: Recalcular las filas después de cargar el inventario
       recalculateRows();
 
       setTimeout(function() {

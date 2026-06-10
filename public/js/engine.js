@@ -4,135 +4,132 @@ function parseSheetWithAutoHeader(sheet) {
   const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
   if (!aoa.length) return [];
   
-  let headerRowIndex = -1;
+  console.log("📋 Total filas en el archivo:", aoa.length);
   
-  for (let i = 0; i < Math.min(20, aoa.length); i++) {
-    const row = Array.isArray(aoa[i]) ? aoa[i] : [];
-    const joined = row.join(" | ");
-    
-    const hasSKU = joined.includes("Código") || joined.includes("codigo") || joined.includes("SKU");
-    const hasInventario = joined.includes("Existencia") || joined.includes("existencia") || joined.includes("Inventario");
-    
-    if (hasSKU && hasInventario) { 
-      headerRowIndex = i; 
-      break; 
-    }
-  }
-  
-  if (headerRowIndex === -1) {
-    headerRowIndex = aoa.length > 4 ? 4 : 0;
-  }
-  
+  // Tu archivo tiene los encabezados en la FILA 4 (índice 4)
+  const headerRowIndex = 4;
   const headerRow = aoa[headerRowIndex] || [];
-  const finalMap = {};
   
-  headerRow.forEach((colName, idx) => {
-    const nameStr = String(colName || "").trim();
-    
-    if (nameStr === "Código" || nameStr === "codigo" || nameStr === "SKU") {
-      finalMap.SKU = idx;
-    } else if (nameStr === "Nombre" || nameStr.includes("descripcion") || nameStr === "Producto") {
-      finalMap.Producto = idx;
-    } else if (nameStr === "Existencia" || nameStr === "inventario" || nameStr === "Cantidad") {
-      finalMap.Inventario = idx;
-    } else if (nameStr.includes("Costo") || nameStr.includes("precio") || nameStr.includes("Consumo")) {
-      finalMap.ConsumoMensual = idx;
+  console.log("📋 Encabezados en fila 4:", headerRow);
+  
+  // Buscar las columnas específicas
+  let skuCol = -1;
+  let productCol = -1;
+  let inventoryCol = -1;
+  
+  for (let i = 0; i < headerRow.length; i++) {
+    const cell = String(headerRow[i] || "").trim();
+    if (cell === "Código") {
+      skuCol = i;
+      console.log(`✅ Columna "Código" encontrada en índice ${i}`);
     }
-  });
+    if (cell === "Nombre") {
+      productCol = i;
+      console.log(`✅ Columna "Nombre" encontrada en índice ${i}`);
+    }
+    if (cell === "Existencia") {
+      inventoryCol = i;
+      console.log(`✅ Columna "Existencia" encontrada en índice ${i}`);
+    }
+  }
   
-  if (finalMap.SKU === undefined) finalMap.SKU = 0; 
-  if (finalMap.Producto === undefined) finalMap.Producto = 2;
-  if (finalMap.Inventario === undefined) finalMap.Inventario = 12;
-  if (finalMap.ConsumoMensual === undefined) finalMap.ConsumoMensual = -1;
+  // Asignar valores por defecto si no se encontraron
+  if (skuCol === -1) skuCol = 0;
+  if (productCol === -1) productCol = 2;
+  if (inventoryCol === -1) inventoryCol = 12;
+  
+  const finalMap = {
+    SKU: skuCol,
+    Producto: productCol,
+    Inventario: inventoryCol
+  };
   
   state.columnMap = finalMap;
-  return aoa.slice(headerRowIndex + 1);
-}
-
-function computeRow(sku, producto, inventario, map) {
-  const regla = state.adminRules[sku] || {};
-  const hasMin = (regla.minimo !== undefined && regla.minimo !== "" && regla.minimo !== null);
-  const hasMax = (regla.maximo !== undefined && regla.maximo !== "" && regla.maximo !== null);
+  console.log("📋 Mapa de columnas final:", finalMap);
   
-  const minimo = hasMin ? Number(regla.minimo) : 0;
-  const maximo = hasMax ? Number(regla.maximo) : 0;
-
-  // Precio SIN IVA desde el lookup
-  const precioSinIva = state.preciosLookup[sku] !== undefined ? state.preciosLookup[sku] : null;
-
-  const stockActual = (inventario === undefined || inventario === null || inventario === "") ? 0 : Number(inventario);
-
-  let pedidoSugerido = 0;
-  if (hasMin && hasMax) {
-    // ✅ Pide cuando el inventario es IGUAL O MENOR al mínimo
-    if (stockActual <= minimo) {
-      pedidoSugerido = maximo - stockActual;
-      if (pedidoSugerido < 0) pedidoSugerido = 0;
-    }
-  }
-
-  const exceso = (hasMax && stockActual > maximo) ? (stockActual - maximo) : 0;
-
-  // Costos usando precio SIN IVA
-  let costoUnitarioFinal = null;
-  let costoTotalFinal = null;
-
-  if (precioSinIva !== null && !isNaN(precioSinIva) && precioSinIva > 0) {
-    costoUnitarioFinal = Number(precioSinIva);
-    costoTotalFinal = pedidoSugerido * costoUnitarioFinal;
-  }
-
-  let estado = "SIN REGLAS";
-  if (hasMin && hasMax) {
-    if (pedidoSugerido > 0) estado = "PEDIR";
-    else if (exceso > 0) estado = "EXCESO";
-    else estado = "OK";
-  } else if (hasMin && !hasMax) {
-    estado = "SOLO MINIMO";
-  } else if (!hasMin && hasMax) {
-    estado = "SOLO MAXIMO";
-  }
-
-  return {
-    SKU: sku,
-    Producto: producto,
-    Inventario: stockActual,
-    CostoUnitario: costoUnitarioFinal,
-    Minimo: hasMin ? minimo : "",
-    Maximo: hasMax ? maximo : "",
-    ConsumoMensual: 0,
-    PedidoSugerido: pedidoSugerido,
-    CostoTotal: costoTotalFinal,
-    Exceso: exceso,
-    Estado: estado
-  };
+  // Las filas de datos empiezan desde la fila 5 (índice 5)
+  const dataRows = aoa.slice(headerRowIndex + 1);
+  console.log("📋 Filas de datos encontradas:", dataRows.length);
+  
+  return dataRows;
 }
 
 function recalculateRows() {
+  console.log("🔄 Recalculando filas...");
+  console.log("📊 state.rawJson length:", state.rawJson ? state.rawJson.length : 0);
+  console.log("📊 state.listaCompleta length:", state.listaCompleta ? state.listaCompleta.length : 0);
+  console.log("📊 state.preciosLookup keys:", Object.keys(state.preciosLookup || {}).length);
+  
   const agrupar = {};
   
   if (state.rawJson && state.rawJson.length && state.columnMap) {
     const map = state.columnMap;
     
-    state.rawJson.forEach(r => {
-      const sku = String(r[map.SKU] || '').trim();
-      if (!sku || sku === "Código" || sku.includes("---")) return;
-
-      const producto = String(r[map.Producto] || '').trim();
-      const inventario = toNumOrNull(r[map.Inventario]) || 0;
-
+    for (let i = 0; i < state.rawJson.length; i++) {
+      const r = state.rawJson[i];
+      if (!r) continue;
+      
+      // Obtener SKU
+      let sku = "";
+      if (r[map.SKU] !== undefined && r[map.SKU] !== null && r[map.SKU] !== "") {
+        sku = String(r[map.SKU]).trim();
+      }
+      
+      if (!sku || sku === "" || sku === "Código") continue;
+      
+      // Obtener producto del inventario
+      let productoInventario = "";
+      if (r[map.Producto] !== undefined && r[map.Producto] !== null && r[map.Producto] !== "") {
+        productoInventario = String(r[map.Producto]).trim();
+      }
+      
+      // Obtener inventario
+      let inventario = 0;
+      if (r[map.Inventario] !== undefined && r[map.Inventario] !== null && r[map.Inventario] !== "") {
+        const invVal = String(r[map.Inventario]).trim();
+        if (invVal !== "" && !isNaN(Number(invVal))) {
+          inventario = Number(invVal);
+        }
+      }
+      
+      if (inventario < 0) inventario = 0;
+      
       if (!agrupar[sku]) {
         agrupar[sku] = {
           sku: sku,
-          producto: producto,
+          producto: productoInventario,
           inventario: 0
         };
       }
       agrupar[sku].inventario += inventario;
-    });
+    }
+  }
+  
+  console.log("📊 SKUs agrupados (con inventario):", Object.keys(agrupar).length);
+  
+  // Crear un mapa de nombres desde listaCompleta para búsqueda rápida
+  const nombresMap = {};
+  if (state.listaCompleta && state.listaCompleta.length) {
+    for (const item of state.listaCompleta) {
+      if (item.CODIGO) {
+        nombresMap[item.CODIGO] = item.DESCRIPCION || item.CODIGO;
+      }
+    }
+    console.log("📊 Nombres cargados desde listaCompleta:", Object.keys(nombresMap).length);
+    console.log("📋 Ejemplo de nombres:", Object.entries(nombresMap).slice(0, 3));
+  }
+  
+  // Crear mapa de nombres desde adminRules
+  if (state.adminRules && Object.keys(state.adminRules).length) {
+    for (const sku in state.adminRules) {
+      if (state.adminRules[sku].producto && !nombresMap[sku]) {
+        nombresMap[sku] = state.adminRules[sku].producto;
+      }
+    }
   }
   
   const skusConPrecio = new Set(Object.keys(state.preciosLookup || {}));
+  console.log("📊 SKUs con precio:", skusConPrecio.size);
   
   const agruparConPrecio = {};
   Object.keys(agrupar).forEach(sku => {
@@ -143,6 +140,7 @@ function recalculateRows() {
     }
   });
   
+  // También incluir SKUs con reglas pero sin inventario
   if (state.adminRules && Object.keys(state.adminRules).length > 0) {
     Object.keys(state.adminRules).forEach(sku => {
       const regla = state.adminRules[sku];
@@ -151,11 +149,7 @@ function recalculateRows() {
       
       if (hasMin && hasMax && skusConPrecio.has(sku)) {
         if (!agruparConPrecio[sku]) {
-          let producto = state.adminRules[sku]?.producto || "";
-          if (!producto && state.listaCompleta) {
-            const found = state.listaCompleta.find(item => item.CODIGO === sku);
-            if (found) producto = found.DESCRIPCION;
-          }
+          let producto = nombresMap[sku] || state.adminRules[sku]?.producto || "";
           agruparConPrecio[sku] = {
             sku: sku,
             producto: producto || "Sin nombre",
@@ -168,8 +162,78 @@ function recalculateRows() {
   }
   
   state.rows = Object.values(agruparConPrecio).map(item => {
-    return computeRow(item.sku, item.producto, item.inventario, state.columnMap || {});
+    // Usar el nombre desde el mapa si existe, sino el del inventario, sino el SKU
+    const nombreFinal = nombresMap[item.sku] || item.producto || item.sku;
+    
+    return {
+      SKU: item.sku,
+      Producto: nombreFinal,
+      Inventario: item.inventario,
+      CostoUnitario: state.preciosLookup[item.sku] || null,
+      Minimo: state.adminRules[item.sku]?.minimo ?? "",
+      Maximo: state.adminRules[item.sku]?.maximo ?? "",
+      ConsumoMensual: 0,
+      PedidoSugerido: 0,
+      CostoTotal: null,
+      Exceso: 0,
+      Estado: "SIN REGLAS"
+    };
+  }).map(row => {
+    // Recalcular valores con las reglas
+    const regla = state.adminRules[row.SKU] || {};
+    const hasMin = (regla.minimo !== undefined && regla.minimo !== "" && regla.minimo !== null);
+    const hasMax = (regla.maximo !== undefined && regla.maximo !== "" && regla.maximo !== null);
+    const minimo = hasMin ? Number(regla.minimo) : 0;
+    const maximo = hasMax ? Number(regla.maximo) : 0;
+    const precioSinIva = row.CostoUnitario;
+    const stockActual = row.Inventario;
+    
+    let pedidoSugerido = 0;
+    if (hasMin && hasMax) {
+      if (stockActual <= minimo) {
+        pedidoSugerido = maximo - stockActual;
+        if (pedidoSugerido < 0) pedidoSugerido = 0;
+      }
+    }
+    
+    const exceso = (hasMax && stockActual > maximo) ? (stockActual - maximo) : 0;
+    
+    let costoTotalFinal = null;
+    if (precioSinIva !== null && !isNaN(precioSinIva) && precioSinIva > 0) {
+      costoTotalFinal = pedidoSugerido * precioSinIva;
+    }
+    
+    let estado = "SIN REGLAS";
+    if (hasMin && hasMax) {
+      if (pedidoSugerido > 0) estado = "PEDIR";
+      else if (exceso > 0) estado = "EXCESO";
+      else estado = "OK";
+    } else if (hasMin && !hasMax) {
+      estado = "SOLO MINIMO";
+    } else if (!hasMin && hasMax) {
+      estado = "SOLO MAXIMO";
+    }
+    
+    return {
+      ...row,
+      Minimo: hasMin ? minimo : "",
+      Maximo: hasMax ? maximo : "",
+      PedidoSugerido: pedidoSugerido,
+      CostoTotal: costoTotalFinal,
+      Exceso: exceso,
+      Estado: estado
+    };
   });
+  
+  console.log("📊 Total rows calculados:", state.rows.length);
+  
+  // Mostrar los primeros 5 productos como ejemplo
+  if (state.rows.length > 0) {
+    console.log("📋 Ejemplo de productos cargados:");
+    for (let i = 0; i < Math.min(5, state.rows.length); i++) {
+      console.log(`   ${state.rows[i].SKU} - ${state.rows[i].Producto}`);
+    }
+  }
   
   updateMetrics(state.rows);
   
