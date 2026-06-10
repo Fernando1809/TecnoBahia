@@ -21,8 +21,6 @@ if (typeof window.reportPageState === 'undefined') {
 }
 
 // Estado del filtro de inventario para pedido
-// includeZero: true/false - incluir productos con inventario = 0
-// includeAtMin: true/false - incluir productos con inventario = minimo definido
 if (typeof window.inventoryPedidoFilter === 'undefined') {
   window.inventoryPedidoFilter = {
     includeZero: true,
@@ -30,7 +28,7 @@ if (typeof window.inventoryPedidoFilter === 'undefined') {
   };
 }
 
-// Función global para confirmar eliminación (SOLO POR CLIC)
+// Función global para confirmar eliminación
 function confirmDeleteProduct(sku, producto) {
   if (confirm(`¿Deseas eliminar "${producto}" (${sku}) de la lista de pedido?`)) {
     state.rows = state.rows.filter(item => item.SKU !== sku);
@@ -46,7 +44,6 @@ function isProductoEnMinimo(producto) {
   const minimo = producto.Minimo;
   const inventario = producto.Inventario;
   
-  // Solo considerar si tiene mínimo definido y es un número válido
   if (minimo !== undefined && minimo !== "" && minimo !== null && !isNaN(minimo)) {
     return Number(inventario) === Number(minimo);
   }
@@ -57,31 +54,23 @@ function isProductoEnMinimo(producto) {
 function recalcularTotalPorFiltroInventario() {
   if (!state.rows || state.rows.length === 0) return 0;
   
-  // Filtrar productos según selección del usuario
   let productosParaPedido = state.rows.filter(r => r.PedidoSugerido > 0);
   
-  // Aplicar filtro por nivel de inventario
   productosParaPedido = productosParaPedido.filter(r => {
     const inventario = r.Inventario;
     
-    // Incluir inventario = 0
     if (window.inventoryPedidoFilter.includeZero && inventario === 0) return true;
-    
-    // Incluir productos en mínimo (inventario === minimo definido)
     if (window.inventoryPedidoFilter.includeAtMin && isProductoEnMinimo(r)) return true;
     
     return false;
   });
   
-  // Calcular total sin IVA
   const subtotalSinIva = productosParaPedido.reduce((acc, r) => {
     return acc + (r.CostoTotal !== null && !isNaN(r.CostoTotal) ? r.CostoTotal : 0);
   }, 0);
   
-  // Calcular total con IVA
   const totalConIva = subtotalSinIva * 1.14;
   
-  // Actualizar el indicador de total
   const elCantPedido = document.getElementById("mCantPedido");
   if (elCantPedido) {
     elCantPedido.textContent = "$" + totalConIva.toLocaleString("en-US", {
@@ -90,7 +79,6 @@ function recalcularTotalPorFiltroInventario() {
     });
   }
   
-  // Actualizar contador de productos con pedido según filtro
   const elPedido = document.getElementById("mPedido");
   if (elPedido) {
     elPedido.textContent = productosParaPedido.length;
@@ -152,7 +140,6 @@ function renderTableDynamic(data, filterType) {
 
   const activeFilter = String(filterType || "todos").toLowerCase();
 
-  // Definir columnas según el filtro
   let columns = [];
   
   if (activeFilter === "pedido" || activeFilter === "pedir") {
@@ -210,7 +197,6 @@ function renderTableDynamic(data, filterType) {
     ];
   }
 
-  // Generar encabezados con eventos de ordenamiento
   thead.innerHTML = `<tr>${columns.map(col => {
     let sortIcon = '';
     if (col.sortable) {
@@ -230,7 +216,6 @@ function renderTableDynamic(data, filterType) {
     return;
   }
 
-  // Aplicar ordenamiento
   let sortedData = [...data];
   if (window.sortState.column) {
     sortedData.sort((a, b) => {
@@ -251,7 +236,6 @@ function renderTableDynamic(data, filterType) {
       return strA.localeCompare(strB);
     });
   } else {
-    // Orden por defecto: Inventario de mayor a menor
     sortedData.sort((a, b) => {
       const invA = a.Inventario || 0;
       const invB = b.Inventario || 0;
@@ -259,13 +243,11 @@ function renderTableDynamic(data, filterType) {
     });
   }
 
-  // Paginación
   const totalItems = sortedData.length;
   const totalPages = Math.ceil(totalItems / window.reportPageState.pageSize);
   const startIndex = (window.reportPageState.currentPage - 1) * window.reportPageState.pageSize;
   const paginatedData = sortedData.slice(startIndex, startIndex + window.reportPageState.pageSize);
 
-  // Renderizar filas
   tbody.innerHTML = paginatedData.map(r => {
     let estadoClass = "";
     let estadoTexto = "";
@@ -370,15 +352,12 @@ function renderTableDynamic(data, filterType) {
     return `<tr>${cells}</tr>`;
   }).join('');
 
-  // Agregar paginación
   renderReportPagination(totalPages, totalItems);
 
-  // Event listeners SOLO para inputs de pedido
   tbody.querySelectorAll('.pedido-sugerido-input').forEach(input => {
     input.removeEventListener('input', handlePedidoSugeridoChange);
     input.addEventListener('input', handlePedidoSugeridoChange);
     
-    // Prevenir propagación de eventos de teclado
     input.addEventListener('keydown', function(e) {
       e.stopPropagation();
       const allowedKeys = ['Backspace', 'Delete', 'Tab', 'Enter', 'ArrowUp', 'ArrowDown', 'Home', 'End'];
@@ -389,7 +368,6 @@ function renderTableDynamic(data, filterType) {
   });
 }
 
-// Función para renderizar paginación del reporte
 function renderReportPagination(totalPages, totalItems) {
   const existingPagination = document.getElementById("reportPagination");
   if (existingPagination) existingPagination.remove();
@@ -496,12 +474,10 @@ function renderReportPagination(totalPages, totalItems) {
   tableContainer.appendChild(paginationDiv);
 }
 
-// Resetear paginación cuando cambia el filtro
 function resetReportPagination() {
   window.reportPageState.currentPage = 1;
 }
 
-// Función para ordenar la tabla
 function sortTable(columnKey) {
   if (window.sortState.column === columnKey) {
     window.sortState.direction = window.sortState.direction === 'desc' ? 'asc' : 'desc';
@@ -513,7 +489,6 @@ function sortTable(columnKey) {
   applyFilterAndSearch();
 }
 
-// Función para mostrar tooltip con Min y Max
 function showMinMaxInfo(sku) {
   const product = state.rows.find(r => r.SKU === sku);
   if (product) {
@@ -559,7 +534,7 @@ function handlePedidoSugeridoChange(event) {
 }
 
 // ============================================================
-// SECCIÓN 2: FILTROS Y BÚSQUEDA
+// SECCIÓN 2: FILTROS Y BÚSQUEDA (CORREGIDO)
 // ============================================================
 
 function applyFilterAndSearch() {
@@ -569,23 +544,30 @@ function applyFilterAndSearch() {
   let filtered = [...state.rows];
   const currentFilter = String(state.activeFilter || "todos").toLowerCase();
 
-  // FILTROS EXISTENTES
+  console.log("🔍 Aplicando filtro:", currentFilter);
+  console.log("📊 Total rows antes de filtrar:", filtered.length);
+
   if (currentFilter === "pedido" || currentFilter === "pedir") {
     filtered = filtered.filter(r => {
-      const hasFullRule = (r.Minimo !== "" && r.Minimo !== undefined && r.Minimo !== null) &&
-                          (r.Maximo !== "" && r.Maximo !== undefined && r.Maximo !== null);
+      // CONDICIÓN PRINCIPAL: Debe tener pedido sugerido > 0
+      if (r.PedidoSugerido <= 0) return false;
+      
+      // Verificar si tiene precio (opcional, pero mostramos igual)
       const hasPrice = (r.CostoUnitario !== null && r.CostoUnitario !== undefined && r.CostoUnitario > 0);
-      const hasPedido = r.PedidoSugerido > 0;
+      if (!hasPrice) {
+        console.log(`⚠️ Producto ${r.SKU} no tiene precio, pero se muestra igual`);
+      }
       
-      if (!(hasFullRule && hasPrice && hasPedido)) return false;
-      
+      // Aplicar filtro de inventario solo si está configurado
       const inventario = r.Inventario;
       const estaEnMinimo = isProductoEnMinimo(r);
       
       if (window.inventoryPedidoFilter.includeZero && inventario === 0) return true;
       if (window.inventoryPedidoFilter.includeAtMin && estaEnMinimo) return true;
       
-      return false;
+      // Si el producto tiene inventario > 0 pero no está en mínimo,
+      // lo mostramos igual si tiene pedido
+      return true;
     });
   } else if (currentFilter === "exceso") {
     filtered = filtered.filter(r => {
@@ -614,6 +596,7 @@ function applyFilterAndSearch() {
     });
   }
 
+  console.log("📊 Total rows después de filtrar:", filtered.length);
   state.filtered = filtered;
   renderTableDynamic(filtered, currentFilter);
 
@@ -645,6 +628,41 @@ function applyFilterAndSearch() {
 
 let selectedProductForOrder = null;
 
+// Función para asegurar que adminRules esté cargado
+async function asegurarAdminRulesCargado() {
+  if (state.adminRules && Object.keys(state.adminRules).length > 0) {
+    console.log("✅ adminRules ya cargado:", Object.keys(state.adminRules).length);
+    return true;
+  }
+  
+  console.log("🔄 adminRules vacío, intentando cargar desde Firestore...");
+  
+  if (typeof loadRules === "function") {
+    try {
+      await loadRules();
+      console.log("📦 loadRules ejecutado, adminRules ahora:", Object.keys(state.adminRules || {}).length);
+    } catch(e) {
+      console.error("Error cargando rules:", e);
+    }
+  }
+  
+  const savedSinReglas = localStorage.getItem('tecnobahia_skus_sin_reglas');
+  if (savedSinReglas) {
+    try {
+      const skusSinReglas = JSON.parse(savedSinReglas);
+      if (!state.adminRules) state.adminRules = {};
+      Object.assign(state.adminRules, skusSinReglas);
+      console.log("📦 Cargados SKUs sin reglas desde localStorage:", Object.keys(skusSinReglas).length);
+    } catch(e) {
+      console.warn("Error cargando SKUs sin reglas:", e);
+    }
+  }
+  
+  const totalSKUs = Object.keys(state.adminRules || {}).length;
+  console.log("📊 Total SKUs después de recarga:", totalSKUs);
+  return totalSKUs > 0;
+}
+
 function openAddProductModal() {
   const modal = document.getElementById("modalAddProduct");
   const searchInput = document.getElementById("searchProductInput");
@@ -656,15 +674,26 @@ function openAddProductModal() {
   
   if (searchInput) searchInput.value = "";
   if (resultsDiv) {
-    resultsDiv.innerHTML = "";
-    resultsDiv.style.display = "none";
+    resultsDiv.innerHTML = '<div style="padding: 20px; text-align: center;">🔄 Cargando productos...</div>';
+    resultsDiv.style.display = "block";
   }
   if (cantidadInput) cantidadInput.value = "1";
   selectedProductForOrder = null;
   if (confirmBtn) confirmBtn.disabled = true;
   
   modal.style.display = "flex";
-  setTimeout(() => searchInput?.focus(), 100);
+  
+  asegurarAdminRulesCargado().then(() => {
+    console.log("📊 adminRules final para búsqueda:", Object.keys(state.adminRules || {}).length);
+    const allResults = searchProductsInListaCompleta("");
+    renderSearchResults(allResults);
+    searchInput?.focus();
+  }).catch(err => {
+    console.error("Error cargando productos:", err);
+    if (resultsDiv) {
+      resultsDiv.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--danger);">⚠️ Error cargando productos. Recarga la página.</div>';
+    }
+  });
 }
 
 function closeAddProductModal() {
@@ -674,71 +703,80 @@ function closeAddProductModal() {
 }
 
 function searchProductsInListaCompleta(searchTerm) {
-  if (!searchTerm || searchTerm.length < 2) return [];
-  
-  const term = searchTerm.toLowerCase().trim();
+  const term = searchTerm ? searchTerm.toLowerCase().trim() : "";
   const resultsMap = new Map();
   
-  console.log("🔍 Buscando productos con término:", term);
+  console.log("🔍 Buscando productos con término:", term || "(TODOS)");
   console.log("📊 state.adminRules size:", state.adminRules ? Object.keys(state.adminRules).length : 0);
-  console.log("📊 state.listaCompleta size:", state.listaCompleta ? state.listaCompleta.length : 0);
   
-  // 1. BUSCAR EN adminRules (la fuente principal de SKUs después de cargar reglas)
-  if (state.adminRules && Object.keys(state.adminRules).length) {
+  if (state.adminRules && Object.keys(state.adminRules).length > 0) {
+    let count = 0;
     Object.keys(state.adminRules).forEach(sku => {
       const skuLower = sku.toLowerCase();
       const producto = (state.adminRules[sku].producto || "").toLowerCase();
-      if (skuLower.includes(term) || producto.includes(term)) {
+      
+      const matches = !term || skuLower.includes(term) || producto.includes(term);
+      
+      if (matches) {
         if (!resultsMap.has(sku)) {
+          const precio = (state.preciosLookup && state.preciosLookup[sku]) ? state.preciosLookup[sku] : 0;
           resultsMap.set(sku, {
             SKU: sku,
             Producto: state.adminRules[sku].producto || sku,
-            Precio: state.preciosLookup ? (state.preciosLookup[sku] || 0) : 0,
+            Precio: precio,
             source: "reglas"
           });
+          count++;
         }
       }
     });
+    console.log(`📋 Encontrados en adminRules: ${count}`);
   }
   
-  // 2. BUSCAR EN listaCompleta (precios)
-  if (state.listaCompleta && state.listaCompleta.length) {
-    state.listaCompleta.forEach(item => {
-      const codigo = (item.CODIGO || "").toLowerCase();
-      const descripcion = (item.DESCRIPCION || "").toLowerCase();
-      if (codigo.includes(term) || descripcion.includes(term)) {
-        if (!resultsMap.has(item.CODIGO)) {
-          resultsMap.set(item.CODIGO, {
-            SKU: item.CODIGO,
-            Producto: item.DESCRIPCION,
-            Precio: item.PRECIO_SIN_IVA || 0,
-            source: "precios"
-          });
-        }
-      }
-    });
-  }
-  
-  // 3. BUSCAR EN state.rows (inventario cargado)
-  if (state.rows && state.rows.length) {
+  if (state.rows && state.rows.length > 0) {
+    let count = 0;
     state.rows.forEach(row => {
       const skuLower = (row.SKU || "").toLowerCase();
       const producto = (row.Producto || "").toLowerCase();
-      if (skuLower.includes(term) || producto.includes(term)) {
-        if (!resultsMap.has(row.SKU)) {
-          resultsMap.set(row.SKU, {
-            SKU: row.SKU,
-            Producto: row.Producto || row.SKU,
-            Precio: row.CostoUnitario || (state.preciosLookup ? state.preciosLookup[row.SKU] : 0) || 0,
-            source: "inventario"
-          });
-        }
+      
+      const matches = !term || skuLower.includes(term) || producto.includes(term);
+      
+      if (matches && !resultsMap.has(row.SKU)) {
+        resultsMap.set(row.SKU, {
+          SKU: row.SKU,
+          Producto: row.Producto || row.SKU,
+          Precio: row.CostoUnitario || (state.preciosLookup ? state.preciosLookup[row.SKU] : 0) || 0,
+          source: "inventario"
+        });
+        count++;
       }
     });
+    console.log(`📋 Encontrados en state.rows: ${count}`);
+  }
+  
+  if (state.listaCompleta && state.listaCompleta.length > 0) {
+    let count = 0;
+    state.listaCompleta.forEach(item => {
+      const codigo = (item.CODIGO || "").toLowerCase();
+      const descripcion = (item.DESCRIPCION || "").toLowerCase();
+      
+      const matches = !term || codigo.includes(term) || descripcion.includes(term);
+      
+      if (matches && !resultsMap.has(item.CODIGO)) {
+        resultsMap.set(item.CODIGO, {
+          SKU: item.CODIGO,
+          Producto: item.DESCRIPCION || item.CODIGO,
+          Precio: item.PRECIO_SIN_IVA || 0,
+          source: "precios"
+        });
+        count++;
+      }
+    });
+    console.log(`📋 Encontrados en listaCompleta: ${count}`);
   }
   
   const results = Array.from(resultsMap.values());
-  console.log("🔍 Resultados encontrados:", results.length);
+  console.log("🔍 RESULTADOS TOTALES:", results.length);
   
   results.sort((a, b) => {
     if (a.Precio > 0 && b.Precio === 0) return -1;
@@ -746,7 +784,7 @@ function searchProductsInListaCompleta(searchTerm) {
     return a.SKU.localeCompare(b.SKU);
   });
   
-  return results.slice(0, 50);
+  return results;
 }
 
 function renderSearchResults(results) {
@@ -754,7 +792,7 @@ function renderSearchResults(results) {
   if (!resultsDiv) return;
   
   if (!results.length) {
-    resultsDiv.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--muted);">No se encontraron productos</div>';
+    resultsDiv.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--warning);">⚠️ No se encontraron productos. Verifica que hayas cargado reglas KOLO o precios.</div>';
     resultsDiv.style.display = "block";
     return;
   }
@@ -829,20 +867,19 @@ function addProductToPedido() {
     }
   }
   
-  // 2. Verificar/Agregar a adminRules
+  // 2. Verificar/Agregar a adminRules con reglas por defecto
   if (!state.adminRules) state.adminRules = {};
   if (!state.adminRules[sku]) {
     console.log("➕ Agregando a adminRules:", sku);
     state.adminRules[sku] = {
-      minimo: "",
-      maximo: "",
+      minimo: 0,
+      maximo: cantidad,
       producto: producto
     };
     if (typeof persistRules === "function") {
       persistRules();
     }
   } else if (!state.adminRules[sku].producto || state.adminRules[sku].producto === "") {
-    // Si existe pero sin producto, actualizar
     state.adminRules[sku].producto = producto;
     if (typeof persistRules === "function") {
       persistRules();
@@ -858,7 +895,8 @@ function addProductToPedido() {
     existingRow.PedidoSugerido = cantidad;
     existingRow.CostoTotal = precio * cantidad;
     existingRow.Estado = "PEDIR";
-    // Actualizar nombre si era "Sin nombre"
+    existingRow.Minimo = state.adminRules[sku]?.minimo ?? "";
+    existingRow.Maximo = state.adminRules[sku]?.maximo ?? "";
     if (existingRow.Producto === "Sin nombre" || existingRow.Producto === sku || !existingRow.Producto) {
       existingRow.Producto = producto;
     }
@@ -870,8 +908,8 @@ function addProductToPedido() {
       Producto: producto,
       Inventario: 0,
       CostoUnitario: precio,
-      Minimo: "",
-      Maximo: "",
+      Minimo: state.adminRules[sku]?.minimo ?? "",
+      Maximo: state.adminRules[sku]?.maximo ?? "",
       ConsumoMensual: 0,
       PedidoSugerido: cantidad,
       CostoTotal: precio * cantidad,
@@ -890,6 +928,8 @@ function addProductToPedido() {
   
   // 5. Cambiar al filtro de pedido
   state.activeFilter = "pedido";
+  console.log("✅ state.activeFilter cambiado a:", state.activeFilter);
+  
   const chips = document.querySelectorAll(".filter-chip");
   chips.forEach(chip => {
     if (chip.getAttribute("data-filter") === "pedido") {
@@ -915,24 +955,36 @@ function addProductToPedido() {
     recalcularTotalPorFiltroInventario();
   }
   
-  // 8. Aplicar filtros
+  // 8. FORZAR ACTUALIZACIÓN DE LA TABLA
+  console.log("🔄 Actualizando tabla...");
   if (typeof applyFilterAndSearch === "function") {
     applyFilterAndSearch();
   }
   
-  // 9. Refrescar admin si es necesario
+  // 9. Verificar que el producto se agregó correctamente
+  const productoAgregado = state.rows.find(r => r.SKU === sku);
+  if (productoAgregado) {
+    console.log("✅ Producto encontrado en state.rows:", productoAgregado);
+    console.log("   - PedidoSugerido:", productoAgregado.PedidoSugerido);
+    console.log("   - Estado:", productoAgregado.Estado);
+  } else {
+    console.error("❌ ERROR: Producto no encontrado en state.rows!");
+  }
+  
+  // 10. Refrescar admin si es necesario
   if (typeof applyAdminFilter === "function" && state.currentView === "admin") {
     setTimeout(() => applyAdminFilter(), 100);
   }
   
-  // 10. Cerrar modal
+  // 11. Cerrar modal
   closeAddProductModal();
   
-  // 11. Actualizar botón de exportación
+  // 12. Actualizar botón de exportación
   if (typeof updateExportButtonState === "function") {
     updateExportButtonState();
   }
   
+  mostrarNotificacion(`✅ Producto agregado: ${sku} - ${cantidad} unidades`, false);
   console.log("✅ Producto agregado exitosamente");
   console.log("📊 Total productos en state.rows:", state.rows.length);
 }
@@ -947,6 +999,34 @@ function initManualProductModal() {
   if (!addBtn) {
     console.warn("⚠️ Botón btnAddProductToOrder no encontrado");
     return;
+  }
+  
+  const showAllBtn = document.getElementById("btnShowAllProducts");
+  if (showAllBtn) {
+    showAllBtn.addEventListener("click", async () => {
+      console.log("🔄 Mostrando todos los productos...");
+      const resultsDiv = document.getElementById("searchResults");
+      if (resultsDiv) {
+        resultsDiv.innerHTML = '<div style="padding: 20px; text-align: center;">🔄 Cargando...</div>';
+      }
+      await asegurarAdminRulesCargado();
+      const allResults = searchProductsInListaCompleta("");
+      renderSearchResults(allResults);
+    });
+  }
+  
+  const refreshBtn = document.getElementById("btnRefreshProducts");
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", async () => {
+      console.log("🔄 Refrescando productos...");
+      const resultsDiv = document.getElementById("searchResults");
+      if (resultsDiv) {
+        resultsDiv.innerHTML = '<div style="padding: 20px; text-align: center;">🔄 Recargando...</div>';
+      }
+      await asegurarAdminRulesCargado();
+      const allResults = searchProductsInListaCompleta("");
+      renderSearchResults(allResults);
+    });
   }
   
   addBtn.addEventListener("click", openAddProductModal);
@@ -1086,7 +1166,7 @@ function renderAdminPagination(currentPage, totalPages, totalItems) {
 }
 
 // ============================================================
-// SECCIÓN 5: INICIALIZACIÓN Y AUTO CAMBIO A FILTRO PEDIDO
+// SECCIÓN 5: INICIALIZACIÓN
 // ============================================================
 
 function autoSwitchToPedidoFilter() {
@@ -1099,56 +1179,36 @@ function autoSwitchToPedidoFilter() {
     return;
   }
   
-  const productosConPedido = state.rows.filter(r => {
-    const hasFullRule = (r.Minimo !== "" && r.Minimo !== undefined && r.Minimo !== null) &&
-                        (r.Maximo !== "" && r.Maximo !== undefined && r.Maximo !== null);
-    const hasPrice = (r.CostoUnitario !== null && r.CostoUnitario !== undefined && r.CostoUnitario > 0);
-    return hasFullRule && hasPrice && r.PedidoSugerido > 0;
-  }).length;
-  
+  const productosConPedido = state.rows.filter(r => r.PedidoSugerido > 0).length;
   console.log(`📦 Productos con pedido: ${productosConPedido}`);
   
   state.activeFilter = "pedido";
   console.log("✅ state.activeFilter cambiado a:", state.activeFilter);
   
   const chips = document.querySelectorAll(".filter-chip");
-  let chipPedidoEncontrado = false;
   chips.forEach(chip => {
-    const filterValue = chip.getAttribute("data-filter");
-    if (filterValue === "pedido") {
+    if (chip.getAttribute("data-filter") === "pedido") {
       chip.classList.add("active");
-      chipPedidoEncontrado = true;
-      console.log("✅ Chip 'pedido' activado");
     } else {
       chip.classList.remove("active");
     }
   });
   
-  if (!chipPedidoEncontrado) {
-    console.warn("⚠️ No se encontró el chip con data-filter='pedido'");
-  }
-  
   if (typeof resetReportPagination === "function") {
     resetReportPagination();
-    console.log("✅ Paginación reseteada");
-  } else {
-    if (window.reportPageState) window.reportPageState.currentPage = 1;
   }
   
   if (typeof applyFilterAndSearch === "function") {
     applyFilterAndSearch();
-    console.log("✅ Filtro aplicado");
   }
   
   recalcularTotalPorFiltroInventario();
   
   if (productosConPedido === 0) {
-    mostrarNotificacion("📊 No hay productos que requieran pedido en este momento.\nVerifica que tengas precios cargados y reglas definidas.", true);
+    mostrarNotificacion("📊 No hay productos que requieran pedido en este momento.\nUsa el botón '+' para agregar productos manualmente.", true);
   } else {
     mostrarNotificacion(`📊 Filtro cambiado a "PEDIDO". ${productosConPedido} productos requieren pedido.`, false);
   }
-  
-  console.log("🎯 autoSwitchToPedidoFilter completado");
 }
 
 function initPresentationFilter() {
