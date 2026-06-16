@@ -56,6 +56,11 @@ function parseSheetWithAutoHeader(sheet) {
 
 function recalculateRows() {
   console.log("🔄 Recalculando filas...");
+  
+  // 🔴 GUARDAR PRODUCTOS MANUALES ANTES DE RECALCULAR
+  const manualProducts = (state.rows || []).filter(r => r._manual === true);
+  console.log("📦 Productos manuales a preservar:", manualProducts.length);
+  
   console.log("📊 state.rawJson length:", state.rawJson ? state.rawJson.length : 0);
   console.log("📊 state.listaCompleta length:", state.listaCompleta ? state.listaCompleta.length : 0);
   console.log("📊 state.preciosLookup keys:", Object.keys(state.preciosLookup || {}).length);
@@ -227,13 +232,39 @@ function recalculateRows() {
   
   console.log("📊 Total rows calculados:", state.rows.length);
   
+  // 🔴 PRESERVAR PRODUCTOS AGREGADOS MANUALMENTE
+  if (manualProducts.length > 0) {
+    console.log(`📦 Preservando ${manualProducts.length} productos manuales...`);
+    manualProducts.forEach(manual => {
+      // Buscar si ya existe en rows
+      const existingIndex = state.rows.findIndex(r => r.SKU === manual.SKU);
+      if (existingIndex !== -1) {
+        // Reemplazar el calculado con el manual (FORZAR inventario 0)
+        state.rows[existingIndex] = {
+          ...state.rows[existingIndex],
+          ...manual,
+          Inventario: 0, // Siempre 0 para manuales
+          _manual: true
+        };
+        console.log(`🔄 Producto manual preservado: ${manual.SKU}`);
+      } else {
+        // Agregar si no existe
+        state.rows.push(manual);
+        console.log(`➕ Producto manual agregado: ${manual.SKU}`);
+      }
+    });
+  }
+  
   // Mostrar los primeros 5 productos como ejemplo
   if (state.rows.length > 0) {
     console.log("📋 Ejemplo de productos cargados:");
     for (let i = 0; i < Math.min(5, state.rows.length); i++) {
-      console.log(`   ${state.rows[i].SKU} - ${state.rows[i].Producto}`);
+      const esManual = state.rows[i]._manual === true;
+      console.log(`   ${state.rows[i].SKU} - ${state.rows[i].Producto} ${esManual ? '📌 (manual)' : ''}`);
     }
   }
+  
+  console.log("📊 Total rows final (con manuales):", state.rows.length);
   
   updateMetrics(state.rows);
   
@@ -257,6 +288,10 @@ function updateMetrics(rows) {
   if (state.activeFilter === "pedido" && window.inventoryPedidoFilter) {
     conPedido = rows.filter(r => {
       if (r.PedidoSugerido <= 0) return false;
+      
+      // SI ES MANUAL, SIEMPRE CONTAR
+      if (r._manual === true) return true;
+      
       const inventario = r.Inventario;
       
       // Verificar si está en mínimo

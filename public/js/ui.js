@@ -60,6 +60,9 @@ function recalcularTotalPorFiltroInventario() {
     const inventario = r.Inventario;
     const estaEnMinimo = isProductoEnMinimo(r);
     
+    // SI ES MANUAL, SIEMPRE INCLUIR
+    if (r._manual === true) return true;
+    
     if (window.inventoryPedidoFilter.includeZero && !window.inventoryPedidoFilter.includeAtMin) {
       return inventario === 0;
     }
@@ -137,6 +140,9 @@ function getProductosParaExportar() {
     if (r.PedidoSugerido <= 0) return false;
     const inventario = r.Inventario;
     const estaEnMinimo = isProductoEnMinimo(r);
+    
+    // SI ES MANUAL, SIEMPRE INCLUIR
+    if (r._manual === true) return true;
     
     if (window.inventoryPedidoFilter.includeZero && !window.inventoryPedidoFilter.includeAtMin) {
       return inventario === 0;
@@ -305,8 +311,11 @@ function renderTableDynamic(data, filterType) {
         const invValue = (value === undefined || value === null || value === "") ? 0 : value;
         const hasMinMax = (r.Minimo && r.Minimo !== "") || (r.Maximo && r.Maximo !== "");
         const estaEnMinimo = isProductoEnMinimo(r);
+        const esManual = r._manual === true;
         
-        if (invValue === 0) {
+        if (invValue === 0 && esManual) {
+          displayValue = `<span style="color: var(--warning); font-weight: bold;">0 (manual)</span>`;
+        } else if (invValue === 0) {
           displayValue = `<span style="color: var(--danger); font-weight: bold;">0</span>`;
         } else if (estaEnMinimo) {
           displayValue = `<span style="color: var(--warning); font-weight: bold;">${Math.floor(invValue)} (mínimo)</span>`;
@@ -570,6 +579,9 @@ function applyFilterAndSearch() {
     filtered = filtered.filter(r => {
       if (r.PedidoSugerido <= 0) return false;
       
+      // SI ES MANUAL, SIEMPRE MOSTRAR
+      if (r._manual === true) return true;
+      
       const inventario = r.Inventario;
       const estaEnMinimo = isProductoEnMinimo(r);
       
@@ -798,7 +810,7 @@ function renderSearchResults(results) {
   resultsDiv.style.display = "block";
 }
 
-// FUNCIÓN CORREGIDA - AHORA SÍ AGREGA LOS PRODUCTOS CON PRECIO
+// FUNCIÓN CORREGIDA - AHORA SÍ AGREGA LOS PRODUCTOS CON PRECIO Y FORZA INVENTARIO A 0
 function addProductToPedido() {
   if (!selectedProductForOrder) {
     setStatus("Selecciona un producto primero.", true);
@@ -845,7 +857,6 @@ function addProductToPedido() {
     state.preciosLookup[sku] = precio;
     if (typeof saveListaCompleta === "function") saveListaCompleta();
   } else {
-    // Actualizar precio si ya existe
     existingInLista.PRECIO_SIN_IVA = precio;
     state.preciosLookup[sku] = precio;
     if (typeof saveListaCompleta === "function") saveListaCompleta();
@@ -861,32 +872,38 @@ function addProductToPedido() {
     };
     if (typeof persistRules === "function") persistRules();
   } else {
-    // Actualizar producto si es necesario
     if (!state.adminRules[sku].producto) state.adminRules[sku].producto = producto;
+    if (cantidad > state.adminRules[sku].maximo) {
+      state.adminRules[sku].maximo = cantidad;
+    }
     if (typeof persistRules === "function") persistRules();
   }
   
-  // 3. Agregar o actualizar en state.rows
+  // 3. Agregar o actualizar en state.rows MANUALMENTE (FORZANDO INVENTARIO A 0)
   if (!state.rows) state.rows = [];
+  
   const existingRow = state.rows.find(r => r.SKU === sku);
   
   if (existingRow) {
+    // ACTUALIZAR existente - FORZAR inventario a 0 y pedido a cantidad
     existingRow.PedidoSugerido = cantidad;
     existingRow.CostoTotal = precio * cantidad;
     existingRow.Estado = "PEDIR";
     existingRow.CostoUnitario = precio;
-    existingRow.Inventario = 0;
-    existingRow.Minimo = state.adminRules[sku]?.minimo ?? "";
-    existingRow.Maximo = state.adminRules[sku]?.maximo ?? "";
+    existingRow.Inventario = 0; // FORZAR INVENTARIO A 0
+    existingRow.Minimo = state.adminRules[sku]?.minimo ?? 0;
+    existingRow.Maximo = state.adminRules[sku]?.maximo ?? cantidad;
     if (!existingRow.Producto || existingRow.Producto === "Sin nombre") {
       existingRow.Producto = producto;
     }
-    console.log("✏️ Producto actualizado:", existingRow);
+    existingRow._manual = true; // Marcar como agregado manualmente
+    console.log("✏️ Producto actualizado (FORZADO inventario 0):", existingRow);
   } else {
+    // AGREGAR NUEVO - FORZAR inventario a 0
     const newRow = {
       SKU: sku,
       Producto: producto,
-      Inventario: 0,
+      Inventario: 0, // FORZAR INVENTARIO A 0
       CostoUnitario: precio,
       Minimo: state.adminRules[sku]?.minimo ?? 0,
       Maximo: state.adminRules[sku]?.maximo ?? cantidad,
@@ -894,17 +911,17 @@ function addProductToPedido() {
       PedidoSugerido: cantidad,
       CostoTotal: precio * cantidad,
       Exceso: 0,
-      Estado: "PEDIR"
+      Estado: "PEDIR",
+      _manual: true // Marcar como agregado manualmente
     };
     state.rows.push(newRow);
-    console.log("➕ Nuevo producto agregado:", newRow);
+    console.log("➕ Nuevo producto agregado (FORZADO inventario 0):", newRow);
   }
   
   console.log("📊 Total products en state.rows:", state.rows.length);
   console.log("📊 Productos con PedidoSugerido > 0:", state.rows.filter(r => r.PedidoSugerido > 0).length);
   
-  // 4. Forzar recalculación
-  if (typeof recalculateRows === "function") recalculateRows();
+  // 4. NO LLAMAR A recalculateRows() - SOLO ACTUALIZAR LA TABLA
   
   // 5. Cambiar al filtro de pedido
   state.activeFilter = "pedido";
@@ -926,7 +943,7 @@ function addProductToPedido() {
   // 8. Recalcular total
   recalcularTotalPorFiltroInventario();
   
-  // 9. Aplicar filtros y actualizar tabla
+  // 9. APLICAR FILTROS DIRECTAMENTE
   applyFilterAndSearch();
   
   // 10. Cerrar modal
@@ -935,7 +952,7 @@ function addProductToPedido() {
   // 11. Actualizar botón de exportación
   if (typeof updateExportButtonState === "function") updateExportButtonState();
   
-  setStatus(`✅ Producto agregado: ${sku} - ${cantidad} unidades a $${precio} c/u`, false);
+  setStatus(`✅ Producto agregado al pedido: ${sku} - ${cantidad} unidades a $${precio} c/u`, false);
   mostrarNotificacion(`✅ "${producto}" agregado al pedido (${cantidad} unidades a $${precio})`, false);
 }
 
