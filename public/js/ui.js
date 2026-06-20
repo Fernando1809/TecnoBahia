@@ -67,7 +67,7 @@ function recalcularTotalPorFiltroInventario() {
       return inventario === 0;
     }
     if (!window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
-      return estaEnMinimo;
+      return estaEnMinimo && inventario > 0;
     }
     if (window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
       return (inventario === 0 || estaEnMinimo);
@@ -125,7 +125,7 @@ function setInventoryPedidoFilter(value) {
   
   let mensaje = "";
   if (value === "zero") mensaje = "🔴 Mostrando solo productos con inventario = 0";
-  else if (value === "atMin") mensaje = "🟡 Mostrando solo productos con inventario en su mínimo";
+  else if (value === "atMin") mensaje = "🟡 Mostrando solo productos con inventario en su mínimo (excluye 0)";
   else if (value === "both") mensaje = "🟠 Mostrando productos con inventario = 0 y en mínimo";
   else mensaje = "📊 Mostrando todos los productos con pedido";
   
@@ -148,7 +148,7 @@ function getProductosParaExportar() {
       return inventario === 0;
     }
     if (!window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
-      return estaEnMinimo;
+      return estaEnMinimo && inventario > 0;
     }
     if (window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
       return (inventario === 0 || estaEnMinimo);
@@ -585,18 +585,20 @@ function applyFilterAndSearch() {
       const inventario = r.Inventario;
       const estaEnMinimo = isProductoEnMinimo(r);
       
-      // Los productos con inventario 0 SIEMPRE se muestran
-      if (inventario === 0) return true;
-      
+      // ✅ CORREGIDO: Aplicar el filtro según la selección del usuario
       if (window.inventoryPedidoFilter.includeZero && !window.inventoryPedidoFilter.includeAtMin) {
+        // Solo inventario = 0
         return inventario === 0;
       }
       if (!window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
-        return estaEnMinimo;
+        // Solo inventario en mínimo (excluye inventario 0)
+        return estaEnMinimo && inventario > 0;
       }
       if (window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
+        // Inventario = 0 O en mínimo
         return (inventario === 0 || estaEnMinimo);
       }
+      // Todos los productos con pedido (filtro "all")
       return true;
     });
   } else if (currentFilter === "exceso") {
