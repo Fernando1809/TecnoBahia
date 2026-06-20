@@ -57,7 +57,7 @@ function parseSheetWithAutoHeader(sheet) {
 function recalculateRows() {
   console.log("🔄 Recalculando filas...");
   
-  // 🔴 GUARDAR PRODUCTOS MANUALES ANTES DE RECALCULAR
+  // GUARDAR PRODUCTOS MANUALES ANTES DE RECALCULAR
   const manualProducts = (state.rows || []).filter(r => r._manual === true);
   console.log("📦 Productos manuales a preservar:", manualProducts.length);
   
@@ -112,25 +112,27 @@ function recalculateRows() {
   
   console.log("📊 SKUs agrupados (con inventario):", Object.keys(agrupar).length);
   
-  // Crear un mapa de nombres desde listaCompleta para búsqueda rápida
+  // 🔴 NUEVO: Crear mapa de nombres con PRIORIDAD a adminRules
   const nombresMap = {};
+  
+  // 1. PRIMERO: Nombres desde adminRules (archivo de reglas) - PRIORIDAD MÁXIMA
+  if (state.adminRules && Object.keys(state.adminRules).length) {
+    for (const sku in state.adminRules) {
+      if (state.adminRules[sku].producto && state.adminRules[sku].producto.trim() !== "") {
+        nombresMap[sku] = state.adminRules[sku].producto.trim();
+      }
+    }
+    console.log("📊 Nombres cargados desde adminRules (prioridad máxima):", Object.keys(nombresMap).length);
+  }
+  
+  // 2. SEGUNDO: Nombres desde listaCompleta (solo si no existe en adminRules)
   if (state.listaCompleta && state.listaCompleta.length) {
     for (const item of state.listaCompleta) {
-      if (item.CODIGO) {
+      if (item.CODIGO && !nombresMap[item.CODIGO]) {
         nombresMap[item.CODIGO] = item.DESCRIPCION || item.CODIGO;
       }
     }
-    console.log("📊 Nombres cargados desde listaCompleta:", Object.keys(nombresMap).length);
-    console.log("📋 Ejemplo de nombres:", Object.entries(nombresMap).slice(0, 3));
-  }
-  
-  // Crear mapa de nombres desde adminRules
-  if (state.adminRules && Object.keys(state.adminRules).length) {
-    for (const sku in state.adminRules) {
-      if (state.adminRules[sku].producto && !nombresMap[sku]) {
-        nombresMap[sku] = state.adminRules[sku].producto;
-      }
-    }
+    console.log("📊 Nombres cargados desde listaCompleta (fallback):", Object.keys(nombresMap).length);
   }
   
   const skusConPrecio = new Set(Object.keys(state.preciosLookup || {}));
@@ -167,8 +169,28 @@ function recalculateRows() {
   }
   
   state.rows = Object.values(agruparConPrecio).map(item => {
-    // Usar el nombre desde el mapa si existe, sino el del inventario, sino el SKU
-    const nombreFinal = nombresMap[item.sku] || item.producto || item.sku;
+    // 🔴 PRIORIDAD: adminRules > listaCompleta > inventario > SKU
+    let nombreFinal = "";
+    
+    // 1. Primero buscar en adminRules (archivo de reglas)
+    if (state.adminRules && state.adminRules[item.sku] && state.adminRules[item.sku].producto) {
+      nombreFinal = state.adminRules[item.sku].producto.trim();
+    }
+    
+    // 2. Si no tiene nombre en reglas, buscar en nombresMap (listaCompleta)
+    if (!nombreFinal && nombresMap[item.sku]) {
+      nombreFinal = nombresMap[item.sku];
+    }
+    
+    // 3. Si no tiene nombre, usar el del inventario
+    if (!nombreFinal && item.producto) {
+      nombreFinal = item.producto;
+    }
+    
+    // 4. Si nada, usar el SKU como nombre
+    if (!nombreFinal) {
+      nombreFinal = item.sku;
+    }
     
     return {
       SKU: item.sku,
@@ -232,7 +254,7 @@ function recalculateRows() {
   
   console.log("📊 Total rows calculados:", state.rows.length);
   
-  // 🔴 PRESERVAR PRODUCTOS AGREGADOS MANUALMENTE
+  // PRESERVAR PRODUCTOS AGREGADOS MANUALMENTE
   if (manualProducts.length > 0) {
     console.log(`📦 Preservando ${manualProducts.length} productos manuales...`);
     manualProducts.forEach(manual => {
@@ -301,7 +323,7 @@ function updateMetrics(rows) {
                             : false;
       
       if (window.inventoryPedidoFilter.includeZero && inventario === 0) return true;
-      if (window.inventoryPedidoFilter.includeAtMin && estaEnMinimo) return true;
+      if (window.inventoryPedidoFilter.includeAtMin && estaEnMinimo && inventario > 0) return true;
       return false;
     }).length;
   } else {
