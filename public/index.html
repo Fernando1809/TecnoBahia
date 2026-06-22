@@ -12,13 +12,12 @@
       window.__resolveFirebaseReady = resolve;
     });
   </script>
-
-  <script src="./js/state.js"></script>
-  <script src="./js/utils.js"></script>
-  <script src="./js/engine.js"></script>
-  <script src="./js/ui.js"></script>
-  <script src="./js/app.js"></script>
-  <script src="./js/admin.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/engine.js"></script>    
+  <script src="js/ui.js"></script>
+  <script src="js/admin.js"></script>
+  <script src="js/app.js"></script> 
 </head>
 <body>
   <div class="corner-menu" aria-label="Menú principal">
@@ -54,7 +53,6 @@
           <input type="file" id="fileInput" accept=".xlsx,.xls" />
         </div>
         
-        <!-- Botones juntos: Descargar Pedido e Ir a KOLO -->
         <div class="row" style="margin-top: 12px;">
           <button id="btnExport" disabled style="flex: 1;">📥 Descargar Pedido</button>
           <a href="https://empresas.kolo-app.com/distribucion/inventario" target="_blank" rel="noopener noreferrer" class="btn-secondary" style="flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; background: var(--primary); color: white; padding: 10px 16px; border-radius: 8px; text-align: center;">
@@ -85,7 +83,6 @@
           </div>
         </div>
         
-        <!-- SELECT DESPLEGABLE PARA FILTRAR POR INVENTARIO -->
         <div class="filter-row" style="margin-top: 12px;">
           <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
             <span style="font-size: 0.85rem; color: var(--muted);">🎯 Incluir en pedido:</span>
@@ -102,7 +99,6 @@
           <input type="text" id="searchInput" placeholder="🔍 Buscar SKU o producto..." />
         </div>
         
-        <!-- Botón para agregar producto manual -->
         <div class="row" style="margin: 12px 0;">
           <button id="btnAddProductToOrder" class="btn-secondary" style="background: var(--primary); color: white;">➕ Agregar producto a pedido</button>
         </div>
@@ -145,111 +141,178 @@
           <p style="margin:0;color:var(--muted);">Define mínimos y máximos por SKU globales del sistema</p>
         </div>
 
-       <div class="admin-actions" style="margin-bottom: 16px;">
-  <button id="btnSaveRules" class="btn-secondary">💾 Guardar reglas</button>
-  <button id="btnClearRules" class="btn-secondary">🗑️ Limpiar SOLO reglas</button>
-  <button id="btnClearAllItems" class="btn-secondary" style="background: #dc2626; color: white;">🔥 ELIMINAR TODOS LOS SKUs</button>
-</div>
-          <!-- PRECIOS -->
-          <div class="row admin-tools">
-            <input type="file" id="listaCompletaInput" accept=".xlsx,.xls,.xlsm" />
-            <button id="btnImportLista" class="btn-secondary">💰 Cargar PRECIOS (archivo precios.xlsm)</button>
+        <!-- ============================================================ -->
+        <!-- SECCIÓN: CONFIRMACIÓN DE REGLAS (CHECKBOXES)                   -->
+        <!-- ============================================================ -->
+        <div style="margin: 16px 0; padding: 16px; background: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border);">
+          <h4 style="margin-bottom: 12px;">✅ Confirmación de Reglas</h4>
+          <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;">
+            Marca los SKUs que ya fueron verificados/actualizados. <strong>Esto NO afecta la generación de pedidos.</strong>
+          </p>
+          <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+            <button type="button" onclick="marcarTodosConfirmados()" style="
+              background: #22c55e;
+              color: white;
+              border: none;
+              padding: 8px 16px;
+              border-radius: 6px;
+              cursor: pointer;
+            ">
+              ✅ Marcar todos como confirmados
+            </button>
+            <button type="button" onclick="desmarcarTodosConfirmados()" style="
+              background: #ef4444;
+              color: white;
+              border: none;
+              padding: 8px 16px;
+              border-radius: 6px;
+              cursor: pointer;
+            ">
+              ❌ Desmarcar todos
+            </button>
+            <button type="button" onclick="downloadMinMaxWithConfirmation()" style="
+              background: #3b82f6;
+              color: white;
+              border: none;
+              padding: 8px 16px;
+              border-radius: 6px;
+              cursor: pointer;
+            ">
+              📥 Descargar MIN-MAX con confirmación
+            </button>
           </div>
-          <div class="hint" id="preciosStatusHint" style="margin-top: 8px;">
-            📊 <strong>Precios cargados</strong>: <span id="preciosInfo">No hay precios cargados</span>
-          </div>
-          <div class="hint">
-            💰 <strong>Archivo de precios</strong>: Sube el archivo de Sherwin Williams (precios.xlsm o similar).<br>
-            ✅ El sistema detecta automáticamente: <strong>CODIGOS</strong>, <strong>DESCRIPCION</strong> y <strong>PAD SIN IVA</strong>.<br>
-            📊 Se aplicará el +13% de IVA para registrar el costo de adquisición real.
-          </div>
+        </div>
 
-          <!-- PLANTILLA PEDIDO -->
-          <div class="row admin-tools" style="margin-top: 12px;">
-            <input type="file" id="pedidoTemplateInput" accept=".xlsx,.xls,.xlsm" />
-            <button id="btnUploadPedidoTemplate" class="btn-secondary">📄 Subir plantilla de PEDIDO</button>
-            <button id="btnDownloadCurrentTemplate" class="btn-secondary" style="background: var(--ok);">📥 Descargar plantilla actual</button>
-          </div>
-          <div class="hint" id="templateStatusHint">
-            📋 <strong>Plantilla de pedido</strong>: Sube el archivo Excel que servirá como base para generar los pedidos.<br>
-            ✅ La plantilla debe tener una hoja llamada <strong>"PEDIDO"</strong>.<br>
-            📌 <span id="templateNameDisplay">No hay plantilla cargada</span>
-          </div>
+        <!-- ============================================================ -->
+        <!-- ACCIONES ADMIN                                                -->
+        <!-- ============================================================ -->
+        <div class="admin-actions" style="margin-bottom: 16px;">
+          <button id="btnSaveRules" class="btn-secondary">💾 Guardar reglas</button>
+          <button id="btnClearRules" class="btn-secondary">🗑️ Limpiar SOLO reglas</button>
+          <button id="btnClearAllItems" class="btn-secondary" style="background: #dc2626; color: white;">🔥 ELIMINAR TODOS LOS SKUs</button>
+        </div>
 
-          <hr style="margin: 16px 0; border: none; border-top: 1px solid var(--border);">
+        <!-- ============================================================ -->
+        <!-- PRECIOS                                                        -->
+        <!-- ============================================================ -->
+        <div class="row admin-tools">
+          <input type="file" id="listaCompletaInput" accept=".xlsx,.xls,.xlsm" />
+          <button id="btnImportLista" class="btn-secondary">💰 Cargar PRECIOS (archivo precios.xlsm)</button>
+          <button id="btnClearPrices" class="btn-secondary" style="background: #dc2626; color: white;">🗑️ Limpiar precios</button>
+        </div>
+        <div class="hint" id="preciosStatusHint" style="margin-top: 8px;">
+          📊 <strong>Precios cargados</strong>: <span id="preciosInfo">No hay precios cargados</span>
+        </div>
+        <div class="hint">
+          💰 <strong>Archivo de precios</strong>: Sube el archivo de Sherwin Williams (precios.xlsm o similar).<br>
+          ✅ El sistema detecta automáticamente: <strong>CODIGOS</strong>, <strong>DESCRIPCION</strong> y <strong>PAD SIN IVA</strong>.<br>
+          📊 Se aplicará el +14% de IVA para registrar el costo de adquisición real.
+        </div>
 
-          <!-- REGLAS -->
-          <div class="row admin-tools">
-            <input type="file" id="adminExcelInput" accept=".xlsx,.xls" />
-            <button id="btnImportExcel" class="btn-secondary">📋 Importar reglas KOLO (Mín/Máx)</button>
-            <button id="btnAddSku" class="btn-secondary">➕ Agregar nuevo SKU</button>
-          </div>
+        <!-- ============================================================ -->
+        <!-- PLANTILLA PEDIDO                                               -->
+        <!-- ============================================================ -->
+        <div class="row admin-tools" style="margin-top: 12px;">
+          <input type="file" id="pedidoTemplateInput" accept=".xlsx,.xls,.xlsm" />
+          <button id="btnUploadPedidoTemplate" class="btn-secondary">📄 Subir plantilla de PEDIDO</button>
+          <button id="btnDownloadCurrentTemplate" class="btn-secondary" style="background: var(--ok);">📥 Descargar plantilla actual</button>
+          <button id="btnClearTemplate" class="btn-secondary" style="background: #dc2626; color: white;">🗑️ Eliminar plantilla</button>
+        </div>
+        <div class="hint" id="templateStatusHint">
+          📋 <strong>Plantilla de pedido</strong>: Sube el archivo Excel que servirá como base para generar los pedidos.<br>
+          ✅ La plantilla debe tener una hoja llamada <strong>"PEDIDO"</strong>.<br>
+          📌 <span id="templateNameDisplay">No hay plantilla cargada</span>
+        </div>
 
-          <!-- Indicador de reglas cargadas -->
-          <div class="hint" id="reglasStatusHint" style="margin-top: 8px;">
-            📋 <strong>Reglas KOLO cargadas</strong>: <span id="reglasInfo">No hay reglas cargadas</span>
-          </div>
+        <hr style="margin: 16px 0; border: none; border-top: 1px solid var(--border);">
 
-          <div class="hint">
-            📋 <strong>Archivo de reglas (KOLO)</strong>: Define mínimos y máximos por código desde el archivo de KOLO.<br>
-            Columnas requeridas: <strong>SKU</strong> (código), <strong>Minimo</strong> y <strong>Maximo</strong>.<br>
-            🔁 Al importar, los registros se fusionan sin duplicar.
-          </div>
+        <!-- ============================================================ -->
+        <!-- REGLAS KOLO                                                    -->
+        <!-- ============================================================ -->
+        <div class="row admin-tools">
+          <input type="file" id="adminExcelInput" accept=".xlsx,.xls" />
+          <button id="btnImportExcel" class="btn-secondary">📋 Importar reglas KOLO (Mín/Máx)</button>
+          <button id="btnAddSku" class="btn-secondary">➕ Agregar nuevo SKU</button>
+        </div>
 
-          <!-- Información de carga masiva en KOLO -->
-          <div style="margin-top: 12px; padding: 12px; background: var(--chip-bg); border-radius: 10px; border: 1px solid var(--border);">
-            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
-              <div style="display: flex; align-items: center; gap: 10px;">
-                <span style="font-size: 20px;">🏢</span>
-                <div>
-                  <strong style="font-size: 13px;">Cargar Mínimos y Máximos en KOLO</strong>
-                  <p style="margin: 0; font-size: 11px; color: var(--muted);">Accede a KOLO para gestionar tus productos</p>
-                </div>
+        <div class="hint" id="reglasStatusHint" style="margin-top: 8px;">
+          📋 <strong>Reglas KOLO cargadas</strong>: <span id="reglasInfo">No hay reglas cargadas</span>
+        </div>
+
+        <div class="hint">
+          📋 <strong>Archivo de reglas (KOLO)</strong>: Define mínimos y máximos por código desde el archivo de KOLO.<br>
+          Columnas requeridas: <strong>SKU</strong> (código), <strong>Minimo</strong> y <strong>Maximo</strong>.<br>
+          🔁 Al importar, los registros se fusionan sin duplicar.
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- INFORMACIÓN KOLO                                               -->
+        <!-- ============================================================ -->
+        <div style="margin-top: 12px; padding: 12px; background: var(--chip-bg); border-radius: 10px; border: 1px solid var(--border);">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 20px;">🏢</span>
+              <div>
+                <strong style="font-size: 13px;">Cargar Mínimos y Máximos en KOLO</strong>
+                <p style="margin: 0; font-size: 11px; color: var(--muted);">Accede a KOLO para gestionar tus productos</p>
               </div>
-              <a href="https://empresas.kolo-app.com/distribucion/inventario" target="_blank" rel="noopener noreferrer" 
-                style="background: var(--primary); color: white; padding: 6px 16px; border-radius: 6px; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; gap: 6px;">
-                🔗 Ir a KOLO
-              </a>
             </div>
-            <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border);">
-              <div style="display: flex; align-items: center; gap: 6px; cursor: pointer;" id="koloInfoTrigger">
-                <span class="info-icon" style="width: 18px; height: 18px; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; background: var(--primary); color: white; border-radius: 50%;">i</span>
-                <span style="font-size: 12px;">¿Cómo hacer carga masiva en KOLO?</span>
-              </div>
-              <div id="koloInfoPanel" style="display: none; margin-top: 10px; font-size: 12px; line-height: 1.5; background: var(--card); padding: 10px; border-radius: 8px; border: 1px solid var(--border);">
-                <ol style="margin: 0; padding-left: 18px;">
-                  <li>Haz clic en <strong>"Ir a KOLO"</strong> e inicia sesión</li>
-                  <li>Ve a <strong>Inventario / Productos</strong></li>
-                  <li>Busca la opción <strong>"Carga Masiva"</strong> o <strong>"Importar"</strong></li>
-                  <li>Descarga la plantilla desde KOLO</li>
-                  <li>Completa los campos: <strong>SKU</strong>, <strong>Mínimo</strong>, <strong>Máximo</strong></li>
-                  <li>Guarda y sube el archivo en KOLO</li>
-                </ol>
-              </div>
+            <a href="https://empresas.kolo-app.com/distribucion/inventario" target="_blank" rel="noopener noreferrer" 
+              style="background: var(--primary); color: white; padding: 6px 16px; border-radius: 6px; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; gap: 6px;">
+              🔗 Ir a KOLO
+            </a>
+          </div>
+          <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border);">
+            <div style="display: flex; align-items: center; gap: 6px; cursor: pointer;" id="koloInfoTrigger">
+              <span class="info-icon" style="width: 18px; height: 18px; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; background: var(--primary); color: white; border-radius: 50%;">i</span>
+              <span style="font-size: 12px;">¿Cómo hacer carga masiva en KOLO?</span>
+            </div>
+            <div id="koloInfoPanel" style="display: none; margin-top: 10px; font-size: 12px; line-height: 1.5; background: var(--card); padding: 10px; border-radius: 8px; border: 1px solid var(--border);">
+              <ol style="margin: 0; padding-left: 18px;">
+                <li>Haz clic en <strong>"Ir a KOLO"</strong> e inicia sesión</li>
+                <li>Ve a <strong>Inventario / Productos</strong></li>
+                <li>Busca la opción <strong>"Carga Masiva"</strong> o <strong>"Importar"</strong></li>
+                <li>Descarga la plantilla desde KOLO</li>
+                <li>Completa los campos: <strong>SKU</strong>, <strong>Mínimo</strong>, <strong>Máximo</strong></li>
+                <li>Guarda y sube el archivo en KOLO</li>
+              </ol>
             </div>
           </div>
+        </div>
 
-          <hr style="margin: 16px 0; border: none; border-top: 1px solid var(--border);">
+        <hr style="margin: 16px 0; border: none; border-top: 1px solid var(--border);">
 
-          <!-- FILTROS ADMIN -->
-          <div class="admin-filters" style="margin-top: 20px;">
-            <input type="text" id="adminSearchInput" placeholder="🔍 Buscar SKU o producto..." style="width: 250px;" />
+        <!-- ============================================================ -->
+        <!-- FILTROS ADMIN Y TABLA                                          -->
+        <!-- ============================================================ -->
+        <div class="admin-filters" style="margin-top: 20px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+          <input type="text" id="adminSearchInput" placeholder="🔍 Buscar SKU o producto..." style="flex: 1; min-width: 200px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px;" />
+          <div style="display: flex; flex-wrap: wrap; gap: 6px;">
             <div class="admin-filter-chip" data-admin-filter="all">📋 Todos</div>
             <div class="admin-filter-chip" data-admin-filter="conRegla">✅ Con reglas</div>
             <div class="admin-filter-chip" data-admin-filter="sinRegla">📭 Sin reglas</div>
+            <div class="admin-filter-chip" data-admin-filter="confirmados">✅ Confirmados</div>
+            <div class="admin-filter-chip" data-admin-filter="pendientes">⏳ Pendientes</div>
           </div>
-          
-          <div style="overflow:auto;">
-            <table id="adminTable" class="admin-table">
-              <thead>
-                <tr><th>SKU</th><th>Producto</th><th>Mínimo</th><th>Máximo</th><th>Acciones</th></tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-          <div id="adminFilterInfo" style="font-size:12px; color:var(--muted); margin-top:8px;"></div>
-          <div id="adminPagination" class="pagination"></div>
         </div>
+        
+        <div style="overflow:auto; margin-top: 12px;">
+          <table id="adminTable" class="admin-table">
+            <thead>
+              <tr>
+                <th>SKU</th>
+                <th>Producto</th>
+                <th>Mínimo</th>
+                <th>Máximo</th>
+                <th style="text-align: center;">✅ Confirmado</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div id="adminFilterInfo" style="font-size:12px; color:var(--muted); margin-top:8px;"></div>
+        <div id="adminPagination" class="pagination"></div>
       </div>
     </div>
   </div>
@@ -337,6 +400,8 @@
     document.getElementById("btnAddSku")?.addEventListener("click", addNewSku);
     document.getElementById("btnUploadPedidoTemplate")?.addEventListener("click", uploadPedidoTemplate);
     document.getElementById("btnDownloadCurrentTemplate")?.addEventListener("click", downloadCurrentTemplate);
+    document.getElementById("btnClearTemplate")?.addEventListener("click", clearPedidoTemplate);
+    document.getElementById("btnClearPrices")?.addEventListener("click", clearAllPrices);
     document.getElementById("btnAddProductToOrder")?.addEventListener("click", openAddProductModal);
     document.getElementById("btnCloseModal")?.addEventListener("click", closeAddProductModal);
     document.getElementById("btnConfirmAddProduct")?.addEventListener("click", addProductToPedido);
@@ -430,7 +495,6 @@
         initManualProductModal();
       }
       
-      // Forzar actualización de la tabla de admin
       if (typeof applyAdminFilter === "function") {
         setTimeout(() => applyAdminFilter(), 200);
       }
@@ -488,7 +552,6 @@
           const targetView = (savedView === "admin" && state.adminUnlocked) ? "admin" : "report";
           console.log("👑 Admin - Mostrando vista guardada:", targetView);
           showView(targetView);
-          // Forzar actualización de la tabla de admin
           setTimeout(() => {
             if (typeof applyAdminFilter === "function") applyAdminFilter();
           }, 300);
