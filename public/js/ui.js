@@ -727,10 +727,7 @@ function applyFilterAndSearch() {
   
   state.filtered = filtered;
   
-  // ⚠️ IMPORTANTE: NO resetear la paginación aquí
-  // La paginación se resetea solo cuando cambia el filtro o la búsqueda (desde los eventos)
-  // Los botones de paginación mantienen su estado
-  
+  // NO resetear la paginación aquí - se resetea desde los eventos
   renderTableDynamic(filtered, currentFilter);
 
   const filterInfo = document.getElementById("filterInfo");
@@ -1100,7 +1097,7 @@ function initManualProductModal() {
 }
 
 // ============================================================
-// SECCIÓN 4: ADMINISTRACIÓN
+// SECCIÓN 4: ADMINISTRACIÓN (CON PRODUCTO EDITABLE)
 // ============================================================
 
 function renderAdminTable(data) {
@@ -1117,13 +1114,20 @@ function renderAdminTable(data) {
     const tr = document.createElement("tr");
     const nombreProducto = r.Producto && r.Producto !== "" ? r.Producto : "Sin nombre";
     
-    // Obtener estado de confirmación desde admin.js
-    const confirmado = typeof getConfirmacionStatus === 'function' ? getConfirmacionStatus(r.SKU) : false;
+    const confirmado = getConfirmacionStatus(r.SKU);
     const checked = confirmado ? 'checked' : '';
     
     tr.innerHTML = `
       <td>${escapeHtml(r.SKU)}</td>
-      <td>${escapeHtml(nombreProducto)}</td>
+      <td>
+        <input type="text" 
+               class="producto-edit-input" 
+               data-sku="${escapeHtml(r.SKU)}" 
+               value="${escapeHtml(nombreProducto)}"
+               style="width:100%; padding:4px 6px; border:1px solid var(--border); border-radius:4px; background:var(--bg-secondary); color:var(--text);"
+               placeholder="Ingrese el nombre del producto"
+               title="Edita el nombre del producto">
+      </td>
       <td><input type="number" min="0" step="1" data-role="min" data-sku="${escapeHtml(r.SKU)}" value="${escapeHtml(r.Minimo)}" style="width:90px;"></td>
       <td><input type="number" min="0" step="1" data-role="max" data-sku="${escapeHtml(r.SKU)}" value="${escapeHtml(r.Maximo)}" style="width:90px;"></td>
       <td style="text-align: center;">
@@ -1141,24 +1145,78 @@ function renderAdminTable(data) {
     tbody.appendChild(tr);
   });
 
+  // Event listener para cambios en el nombre del producto
+  document.querySelectorAll('.producto-edit-input').forEach(input => {
+    input.addEventListener('change', function(e) {
+      const sku = this.getAttribute('data-sku');
+      const nuevoNombre = this.value.trim();
+      
+      if (!nuevoNombre) {
+        mostrarNotificacion("⚠️ El nombre no puede estar vacío", true);
+        this.value = state.adminRules[sku]?.producto || sku;
+        return;
+      }
+      
+      // Actualizar en adminRules
+      if (state.adminRules[sku]) {
+        state.adminRules[sku].producto = nuevoNombre;
+        console.log(`📝 Nombre actualizado para SKU ${sku}: "${nuevoNombre}"`);
+      } else {
+        // Si no existe, crear la regla
+        state.adminRules[sku] = {
+          minimo: "",
+          maximo: "",
+          producto: nuevoNombre,
+          confirmado: false
+        };
+        console.log(`📝 SKU ${sku} creado con nombre "${nuevoNombre}"`);
+      }
+      
+      // Guardar cambios
+      if (typeof persistRules === "function") {
+        persistRules();
+      }
+      
+      // Actualizar tabla
+      if (typeof applyAdminFilter === "function") {
+        applyAdminFilter();
+      }
+      
+      // Recalcular rows para que el nombre se actualice en el reporte
+      if (typeof recalculateRows === "function") {
+        recalculateRows();
+      }
+      
+      mostrarNotificacion(`✅ Nombre actualizado para "${sku}"`, false);
+    });
+    
+    // Permitir Enter para guardar
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        this.blur();
+      }
+      if (e.key === 'Escape') {
+        this.value = this.defaultValue;
+        this.blur();
+      }
+    });
+  });
+
   // Event listener para checkboxes
   document.querySelectorAll('.confirm-checkbox').forEach(checkbox => {
     checkbox.addEventListener('change', function(e) {
       const sku = this.getAttribute('data-sku');
-      if (typeof toggleConfirmacionRegla === 'function') {
-        toggleConfirmacionRegla(sku);
-      } else {
-        // Fallback si la función no existe
-        if (state.adminRules[sku]) {
-          state.adminRules[sku].confirmado = this.checked;
-          if (typeof persistRules === 'function') persistRules();
+      if (state.adminRules[sku]) {
+        state.adminRules[sku].confirmado = this.checked;
+        persistRules();
+        
+        const parentTd = this.closest('td');
+        const statusSpan = parentTd.querySelector('span');
+        if (statusSpan) {
+          statusSpan.textContent = this.checked ? '✅ Confirmado' : '⬜ Pendiente';
         }
-      }
-      
-      const parentTd = this.closest('td');
-      const statusSpan = parentTd.querySelector('span');
-      if (statusSpan) {
-        statusSpan.textContent = this.checked ? '✅ Confirmado' : '⬜ Pendiente';
+        
+        console.log(`📌 SKU ${sku}: ${this.checked ? 'CONFIRMADO' : 'SIN CONFIRMAR'}`);
       }
     });
   });
@@ -1169,10 +1227,10 @@ function renderAdminTable(data) {
       const sku = btn.getAttribute('data-delete-sku');
       if (confirm(`Eliminar reglas para el SKU "${sku}"?`)) {
         delete state.adminRules[sku];
-        if (typeof persistRules === "function") persistRules();
-        if (typeof recalculateRows === "function") recalculateRows();
-        if (typeof applyAdminFilter === "function") applyAdminFilter();
-        if (typeof updateReglasStatusDisplay === "function") updateReglasStatusDisplay();
+        persistRules();
+        recalculateRows();
+        applyAdminFilter();
+        updateReglasStatusDisplay();
         setStatus(`Reglas eliminadas para ${sku}`);
       }
     });

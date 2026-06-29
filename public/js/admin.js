@@ -309,11 +309,9 @@ async function logoutAdmin() {
 
 async function loadRules() {
   try {
-    // Cargar reglas con valores desde Firestore
     const data = await firestoreGetDocData("adminRules");
     const rulesWithValues = data.adminRules || {};
     
-    // Cargar SKUs sin reglas desde localStorage
     let skusSinReglas = {};
     const savedSinReglas = localStorage.getItem('tecnobahia_skus_sin_reglas');
     if (savedSinReglas) {
@@ -325,7 +323,6 @@ async function loadRules() {
       }
     }
     
-    // Combinar ambos
     state.adminRules = { ...skusSinReglas, ...rulesWithValues };
     
     console.log("📋 Reglas KOLO cargadas:", Object.keys(state.adminRules).length);
@@ -353,11 +350,9 @@ async function loadRules() {
 }
 
 async function persistRules() {
-  // Guardar TODOS los SKUs con su estado de confirmación
   const rulesWithValues = {};
   for (const sku in state.adminRules) {
     const rule = state.adminRules[sku];
-    // Guardar siempre que tenga mínimo, máximo O esté confirmado
     if ((rule.minimo !== "" && rule.minimo !== null && rule.minimo !== undefined) || 
         (rule.maximo !== "" && rule.maximo !== null && rule.maximo !== undefined) ||
         rule.confirmado === true) {
@@ -368,7 +363,6 @@ async function persistRules() {
   console.log(`💾 Guardando ${Object.keys(rulesWithValues).length} SKUs en Firestore`);
   console.log(`💾 Total SKUs en memoria: ${Object.keys(state.adminRules).length}`);
   
-  // Guardar en Firestore
   try {
     await firestoreSetDocData("adminRules", { adminRules: rulesWithValues });
     console.log("✅ Reglas guardadas en Firestore");
@@ -376,7 +370,6 @@ async function persistRules() {
     console.error("❌ Error guardando en Firestore:", err);
   }
   
-  // Guardar SKUs sin reglas y sin confirmar en localStorage
   const skusSinReglas = {};
   for (const sku in state.adminRules) {
     const rule = state.adminRules[sku];
@@ -436,7 +429,6 @@ function buildAdminSourceRows() {
       }
     }
     
-    // Obtener estado de confirmación
     const confirmado = state.adminRules[sku]?.confirmado === true;
     
     rows.push({
@@ -508,7 +500,6 @@ function saveRulesFromInputs() {
     if (val === null) nextRules[sku][role === "min" ? "minimo" : "maximo"] = "";
     else nextRules[sku][role === "min" ? "minimo" : "maximo"] = val;
     
-    // Preservar confirmado si existe
     if (!nextRules[sku].hasOwnProperty('confirmado')) {
       nextRules[sku].confirmado = false;
     }
@@ -551,10 +542,6 @@ function clearAllRules() {
   }
 }
 
-// ============================================================
-// FUNCIÓN MEJORADA: AGREGAR NUEVO SKU
-// ============================================================
-
 function addNewSku() {
   if (!state.adminUnlocked) return;
   
@@ -567,10 +554,8 @@ function addNewSku() {
     return;
   }
   
-  // Buscar el nombre del producto en diferentes fuentes
   let producto = "";
   
-  // 1. Buscar en listaCompleta (precios)
   if (state.listaCompleta) {
     const found = state.listaCompleta.find(item => item.CODIGO === skuTrim);
     if (found && found.DESCRIPCION) {
@@ -578,7 +563,6 @@ function addNewSku() {
     }
   }
   
-  // 2. Si no se encuentra en precios, buscar en rows (inventario)
   if (!producto && state.rows) {
     const found = state.rows.find(item => item.SKU === skuTrim);
     if (found && found.Producto) {
@@ -586,7 +570,6 @@ function addNewSku() {
     }
   }
   
-  // 3. Si no se encuentra, permitir que el usuario ingrese el nombre manualmente
   if (!producto) {
     const nombreIngresado = prompt(
       `No se encontró información del producto "${skuTrim}".\n` +
@@ -595,18 +578,14 @@ function addNewSku() {
     if (nombreIngresado !== null && nombreIngresado.trim() !== "") {
       producto = nombreIngresado.trim();
     } else if (nombreIngresado === "") {
-      // Si el usuario ingresa vacío, usar SKU
       producto = skuTrim;
     } else {
-      // Si el usuario cancela, usar SKU
       producto = skuTrim;
     }
   }
   
-  // Si aún no tiene nombre, usar el SKU
   if (!producto) producto = skuTrim;
   
-  // Preguntar si quiere establecer un mínimo y máximo inicial
   let minimo = "";
   let maximo = "";
   const establecerReglas = confirm(
@@ -636,7 +615,6 @@ function addNewSku() {
     }
   }
   
-  // Agregar el SKU con los valores
   state.adminRules[skuTrim] = {
     minimo: minimo,
     maximo: maximo,
@@ -658,7 +636,6 @@ function addNewSku() {
     totalCount: Object.keys(state.adminRules).length
   }).catch(e => console.warn("No se pudo guardar metadata de reglas"));
   
-  // También agregar a listaCompleta si no existe
   if (!state.listaCompleta.some(item => item.CODIGO === skuTrim)) {
     state.listaCompleta.push({
       CODIGO: skuTrim,
@@ -675,7 +652,7 @@ function addNewSku() {
 }
 
 // ============================================================
-// FUNCIÓN CORREGIDA: IMPORTAR REGLAS - DETECCIÓN AUTOMÁTICA DE COLUMNAS
+// FUNCIÓN CORREGIDA: IMPORTAR REGLAS - ACTUALIZA NOMBRES
 // ============================================================
 
 function importRulesExcel() {
@@ -710,10 +687,7 @@ function importRulesExcel() {
       
       console.log("📋 Archivo cargado. Total filas:", rows.length);
       
-      // ============================================================
-      // DETECCIÓN AUTOMÁTICA DE COLUMNAS POR NOMBRE
-      // ============================================================
-      
+      // DETECCIÓN AUTOMÁTICA DE COLUMNAS
       const headerRow = rows[0] || [];
       console.log("📋 Encabezados encontrados:", headerRow);
       
@@ -721,66 +695,53 @@ function importRulesExcel() {
       let prodCol = -1;
       let minCol = -1;
       let maxCol = -1;
+      let confirmadoCol = -1;
       
-      // Buscar columnas por nombre (sin importar el orden)
       headerRow.forEach((header, index) => {
         const h = String(header || "").trim().toLowerCase()
           .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
         
-        // Buscar SKU (código)
         if (h.includes("sku") || h.includes("codigo") || h.includes("cod") || h.includes("item")) {
           if (skuCol === -1) skuCol = index;
           console.log(`✅ Columna SKU encontrada en índice ${index}: "${header}"`);
         }
-        // Buscar Producto (item, descripción, nombre)
         if (h.includes("item") || h.includes("producto") || h.includes("descripcion") || h.includes("nombre")) {
           if (prodCol === -1 || h === "item") prodCol = index;
           console.log(`✅ Columna Producto encontrada en índice ${index}: "${header}"`);
         }
-        // Buscar Minimo
         if (h.includes("min") || h.includes("minimo")) {
           if (minCol === -1) minCol = index;
           console.log(`✅ Columna Minimo encontrada en índice ${index}: "${header}"`);
         }
-        // Buscar Maximo
         if (h.includes("max") || h.includes("maximo")) {
           if (maxCol === -1) maxCol = index;
           console.log(`✅ Columna Maximo encontrada en índice ${index}: "${header}"`);
         }
+        if (h.includes("actualizo") || h.includes("actualizó") || h.includes("confirmado")) {
+          if (confirmadoCol === -1) confirmadoCol = index;
+          console.log(`✅ Columna Confirmado encontrada en índice ${index}: "${header}"`);
+        }
       });
       
-      // Si no se encontraron por nombre, usar índices por defecto
       if (skuCol === -1) { skuCol = 0; console.warn("⚠️ Usando SKU col 0 por defecto"); }
       if (prodCol === -1) { prodCol = 1; console.warn("⚠️ Usando Producto col 1 por defecto"); }
       if (minCol === -1) { minCol = 2; console.warn("⚠️ Usando Minimo col 2 por defecto"); }
       if (maxCol === -1) { maxCol = 3; console.warn("⚠️ Usando Maximo col 3 por defecto"); }
       
-      console.log(`📋 Mapa final: SKU=${skuCol}, Producto=${prodCol}, Min=${minCol}, Max=${maxCol}`);
-      
-      // ============================================================
-      // PROCESAR TODAS LAS FILAS (INCLUYENDO LAS QUE NO TIENEN PRECIO)
-      // ============================================================
+      console.log(`📋 Mapa final: SKU=${skuCol}, Producto=${prodCol}, Min=${minCol}, Max=${maxCol}, Confirmado=${confirmadoCol}`);
       
       let importedCount = 0;
-      let conReglas = 0;
-      let sinReglas = 0;
+      let actualizados = 0;
+      let nuevos = 0;
       let errores = [];
       
-      // IMPORTANTE: NO LIMPIAR state.adminRules, FUSIONAR
-      // Si quieres reemplazar, descomenta la línea de abajo:
-      // state.adminRules = {};
-      // localStorage.removeItem('tecnobahia_skus_sin_reglas');
-      
-      // Recorrer desde la fila 1 (saltando encabezados)
       for (let i = 1; i < rows.length; i++) {
         const row = rows[i];
         if (!row) continue;
         
-        // Verificar si la fila está vacía
         const tieneDatos = row.some(cell => String(cell || "").trim() !== "");
         if (!tieneDatos) continue;
         
-        // Obtener SKU
         let sku = "";
         if (row[skuCol] !== undefined && row[skuCol] !== null && row[skuCol] !== "") {
           sku = String(row[skuCol]).trim().toUpperCase();
@@ -788,14 +749,11 @@ function importRulesExcel() {
         
         if (!sku) continue;
         
-        // Obtener Producto
         let producto = "";
         if (row[prodCol] !== undefined && row[prodCol] !== null && row[prodCol] !== "") {
           producto = String(row[prodCol]).trim();
         }
-        if (!producto) producto = sku;
         
-        // Obtener Minimo (manejar valores con coma como separador decimal)
         let minimo = null;
         if (row[minCol] !== undefined && row[minCol] !== null && row[minCol] !== "") {
           const minVal = String(row[minCol]).trim().replace(/,/g, ".");
@@ -804,7 +762,6 @@ function importRulesExcel() {
           }
         }
         
-        // Obtener Maximo
         let maximo = null;
         if (row[maxCol] !== undefined && row[maxCol] !== null && row[maxCol] !== "") {
           const maxVal = String(row[maxCol]).trim().replace(/,/g, ".");
@@ -813,71 +770,50 @@ function importRulesExcel() {
           }
         }
         
-        // IMPORTANTE: Guardar SIEMPRE el SKU, tenga o no reglas
-        // Si ya existe, actualizar
-        if (!state.adminRules[sku]) {
-          state.adminRules[sku] = {
-            minimo: "",
-            maximo: "",
-            producto: producto,
-            confirmado: false
-          };
-        } else {
-          // Preservar el producto existente si no tiene
-          if (!state.adminRules[sku].producto) {
+        let confirmado = null;
+        if (confirmadoCol !== -1 && row[confirmadoCol] !== undefined && row[confirmadoCol] !== null && row[confirmadoCol] !== "") {
+          const val = String(row[confirmadoCol]).trim().toUpperCase();
+          confirmado = (val === "SI" || val === "TRUE" || val === "1" || val === "SÍ");
+        }
+        
+        const existe = state.adminRules[sku] !== undefined && state.adminRules[sku] !== null;
+        
+        if (existe) {
+          if (producto) {
             state.adminRules[sku].producto = producto;
           }
-        }
-        
-        // Actualizar minimo si tiene valor
-        if (minimo !== null && !isNaN(minimo)) {
-          state.adminRules[sku].minimo = minimo;
-        }
-        
-        // Actualizar maximo si tiene valor
-        if (maximo !== null && !isNaN(maximo)) {
-          state.adminRules[sku].maximo = maximo;
+          if (minimo !== null && !isNaN(minimo)) {
+            state.adminRules[sku].minimo = minimo;
+          }
+          if (maximo !== null && !isNaN(maximo)) {
+            state.adminRules[sku].maximo = maximo;
+          }
+          if (confirmado !== null) {
+            state.adminRules[sku].confirmado = confirmado;
+          }
+          actualizados++;
+        } else {
+          state.adminRules[sku] = {
+            minimo: (minimo !== null && !isNaN(minimo)) ? minimo : "",
+            maximo: (maximo !== null && !isNaN(maximo)) ? maximo : "",
+            producto: producto || sku,
+            confirmado: confirmado || false
+          };
+          nuevos++;
         }
         
         importedCount++;
         
-        // Contar reglas
-        const tieneMin = state.adminRules[sku].minimo !== "" && state.adminRules[sku].minimo !== null;
-        const tieneMax = state.adminRules[sku].maximo !== "" && state.adminRules[sku].maximo !== null;
-        if (tieneMin || tieneMax) {
-          conReglas++;
-        } else {
-          sinReglas++;
-        }
-        
-        // Verificar si el SKU tiene precio (solo advertencia, NO eliminar)
-        if (!state.preciosLookup || !state.preciosLookup[sku]) {
-          if (errores.length < 20) {
-            errores.push(`SKU sin precio: ${sku}`);
-          }
-        }
-        
-        // Mostrar progreso cada 1000 SKUs
         if (importedCount % 1000 === 0) {
           console.log(`📦 Procesados ${importedCount} SKUs...`);
         }
       }
       
       console.log(`✅ Total procesados: ${importedCount} SKUs`);
-      console.log(`📊 Con reglas (mín o máx): ${conReglas}`);
-      console.log(`📭 Sin reglas: ${sinReglas}`);
-      
-      if (errores.length > 0) {
-        console.warn(`⚠️ ${errores.length} SKUs sin precio (no afecta la importación):`, errores.slice(0, 10));
-      }
-      
-      // ============================================================
-      // GUARDAR Y ACTUALIZAR
-      // ============================================================
+      console.log(`📊 Nuevos: ${nuevos}, Actualizados: ${actualizados}`);
       
       await persistRules();
       
-      // Actualizar listaCompleta con los SKUs importados (si no existen)
       for (const sku in state.adminRules) {
         if (!state.listaCompleta.some(item => item.CODIGO === sku)) {
           state.listaCompleta.push({
@@ -892,7 +828,6 @@ function importRulesExcel() {
         await saveListaCompleta();
       }
       
-      // Refrescar
       if (typeof applyAdminFilter === "function") {
         applyAdminFilter();
       }
@@ -910,15 +845,13 @@ function importRulesExcel() {
       
       fileInput.value = "";
       
-      // Mostrar resumen completo
-      let mensaje = `✅ Procesados ${importedCount} SKUs.\n📊 Con reglas: ${conReglas}\n📭 Sin reglas: ${sinReglas}`;
-      if (errores.length > 0) {
-        mensaje += `\n⚠️ ${errores.length} SKUs sin precio (se importaron igual).`;
+      let mensaje = `✅ Procesados ${importedCount} SKUs.\n📊 Nuevos: ${nuevos}\n🔄 Actualizados: ${actualizados}`;
+      if (actualizados > 0) {
+        mensaje += `\n📝 Nombres actualizados para ${actualizados} SKUs.`;
       }
       alert(mensaje);
       setStatus(mensaje, false);
       
-      // Recalcular todo
       if (typeof recalculateRows === "function") {
         recalculateRows();
       }
@@ -1451,9 +1384,6 @@ function downloadKOLOTemplate() {
 // SECCIÓN 7: CONFIRMACIÓN DE REGLAS (CHECKBOXES)
 // ============================================================
 
-/**
- * Alterna el estado de confirmación de un SKU
- */
 function toggleConfirmacionRegla(sku) {
   if (!state.adminRules[sku]) return;
   
@@ -1466,17 +1396,11 @@ function toggleConfirmacionRegla(sku) {
   console.log(`📌 SKU ${sku}: ${estado}`);
 }
 
-/**
- * Obtiene el estado de confirmación de un SKU
- */
 function getConfirmacionStatus(sku) {
   if (!state.adminRules[sku]) return false;
   return state.adminRules[sku].confirmado === true;
 }
 
-/**
- * Marcar todos los SKUs como confirmados
- */
 function marcarTodosConfirmados() {
   if (!state.adminUnlocked) return;
   
@@ -1498,9 +1422,6 @@ function marcarTodosConfirmados() {
   mostrarNotificacion(`✅ ${total} SKUs confirmados`, false);
 }
 
-/**
- * Desmarcar todos los SKUs como no confirmados
- */
 function desmarcarTodosConfirmados() {
   if (!state.adminUnlocked) return;
   
@@ -1522,9 +1443,10 @@ function desmarcarTodosConfirmados() {
   mostrarNotificacion(`✅ ${total} SKUs desmarcados`, false);
 }
 
-/**
- * DESCARGAR ARCHIVO MIN-MAX CON COLUMNA "Se actualizó"
- */
+// ============================================================
+// FUNCIÓN CORREGIDA: DESCARGAR MIN-MAX CON CONFIRMACIÓN Y NOMBRES
+// ============================================================
+
 function downloadMinMaxWithConfirmation() {
   if (!state.adminUnlocked) return;
   
@@ -1539,10 +1461,10 @@ function downloadMinMaxWithConfirmation() {
     const data = [];
     
     data.push([
-      "SKU", 
-      "Producto", 
-      "Minimo", 
-      "Maximo", 
+      "sku", 
+      "item", 
+      "minimo", 
+      "maximo", 
       "Se actualizó"
     ]);
     
@@ -1565,11 +1487,11 @@ function downloadMinMaxWithConfirmation() {
     const ws = XLSX.utils.aoa_to_sheet(data);
     
     ws['!cols'] = [
-      { wch: 20 },
-      { wch: 40 },
-      { wch: 12 },
-      { wch: 12 },
-      { wch: 15 }
+      { wch: 20 },  // sku
+      { wch: 50 },  // item (NOMBRE - más ancho)
+      { wch: 12 },  // minimo
+      { wch: 12 },  // maximo
+      { wch: 15 }   // Se actualizó
     ];
     
     XLSX.utils.book_append_sheet(wb, ws, "MIN_MAX_KOLO");
@@ -1592,7 +1514,7 @@ function downloadMinMaxWithConfirmation() {
 }
 
 // ============================================================
-// SECCIÓN 8: RENDER ADMIN TABLE (CON CHECKBOXES)
+// SECCIÓN 8: RENDER ADMIN TABLE (CON PRODUCTO EDITABLE)
 // ============================================================
 
 function renderAdminTable(data) {
@@ -1613,10 +1535,18 @@ function renderAdminTable(data) {
     const checked = confirmado ? 'checked' : '';
     
     tr.innerHTML = `
-      <td>${escapeHtml(r.SKU)}</td>
-      <td>${escapeHtml(nombreProducto)}</td>
-      <td><input type="number" min="0" step="1" data-role="min" data-sku="${escapeHtml(r.SKU)}" value="${escapeHtml(r.Minimo)}" style="width:90px;"></td>
-      <td><input type="number" min="0" step="1" data-role="max" data-sku="${escapeHtml(r.SKU)}" value="${escapeHtml(r.Maximo)}" style="width:90px;"></td>
+      <td><strong>${escapeHtml(r.SKU)}</strong></td>
+      <td>
+        <input type="text" 
+               class="producto-edit-input" 
+               data-sku="${escapeHtml(r.SKU)}" 
+               value="${escapeHtml(nombreProducto)}"
+               style="width:100%; min-width:200px; padding:4px 8px; border:1px solid var(--border); border-radius:4px; background:var(--bg-secondary); color:var(--text); font-size:13px;"
+               placeholder="Ingrese el nombre del producto"
+               title="Haz clic para editar el nombre">
+      </td>
+      <td><input type="number" min="0" step="1" data-role="min" data-sku="${escapeHtml(r.SKU)}" value="${escapeHtml(r.Minimo)}" style="width:80px; padding:4px; border:1px solid var(--border); border-radius:4px; background:var(--bg-secondary); color:var(--text);"></td>
+      <td><input type="number" min="0" step="1" data-role="max" data-sku="${escapeHtml(r.SKU)}" value="${escapeHtml(r.Maximo)}" style="width:80px; padding:4px; border:1px solid var(--border); border-radius:4px; background:var(--bg-secondary); color:var(--text);"></td>
       <td style="text-align: center;">
         <input type="checkbox" 
                class="confirm-checkbox" 
@@ -1627,9 +1557,40 @@ function renderAdminTable(data) {
           ${confirmado ? '✅ Confirmado' : '⬜ Pendiente'}
         </span>
       </td>
-      <td><button class="btn-secondary" style="background:var(--danger); color:white; padding:4px 8px; cursor:pointer; border:none; border-radius:4px;" data-delete-sku="${escapeHtml(r.SKU)}">🗑</button></td>
+      <td><button class="btn-secondary" style="background:var(--danger); color:white; padding:4px 10px; cursor:pointer; border:none; border-radius:4px; font-size:13px;" data-delete-sku="${escapeHtml(r.SKU)}">🗑</button></td>
     `;
     tbody.appendChild(tr);
+  });
+
+  // Evento: Guardar nombre al perder el foco o presionar Enter
+  document.querySelectorAll('.producto-edit-input').forEach(input => {
+    input.addEventListener('blur', function(e) {
+      guardarNombreProducto(this);
+    });
+    
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        this.blur();
+      }
+      if (e.key === 'Escape') {
+        const sku = this.getAttribute('data-sku');
+        const nombreOriginal = state.adminRules[sku]?.producto || sku;
+        this.value = nombreOriginal;
+        this.blur();
+      }
+    });
+    
+    input.addEventListener('focus', function(e) {
+      this.style.borderColor = 'var(--primary)';
+      this.style.boxShadow = '0 0 0 2px rgba(22, 93, 255, 0.2)';
+      this.select();
+    });
+    
+    input.addEventListener('blur', function(e) {
+      this.style.borderColor = 'var(--border)';
+      this.style.boxShadow = 'none';
+    });
   });
 
   // Event listener para checkboxes
@@ -1665,6 +1626,51 @@ function renderAdminTable(data) {
       }
     });
   });
+}
+
+// ============================================================
+// FUNCIÓN AUXILIAR: Guardar nombre del producto
+// ============================================================
+
+function guardarNombreProducto(input) {
+  const sku = input.getAttribute('data-sku');
+  const nuevoNombre = input.value.trim();
+  
+  if (!nuevoNombre) {
+    mostrarNotificacion("⚠️ El nombre no puede estar vacío", true);
+    const nombreActual = state.adminRules[sku]?.producto || sku;
+    input.value = nombreActual;
+    return;
+  }
+  
+  const nombreActual = state.adminRules[sku]?.producto || sku;
+  if (nuevoNombre === nombreActual) return;
+  
+  if (state.adminRules[sku]) {
+    state.adminRules[sku].producto = nuevoNombre;
+  } else {
+    state.adminRules[sku] = {
+      minimo: "",
+      maximo: "",
+      producto: nuevoNombre,
+      confirmado: false
+    };
+  }
+  
+  if (typeof persistRules === "function") {
+    persistRules();
+  }
+  
+  if (typeof recalculateRows === "function") {
+    recalculateRows();
+  }
+  
+  if (typeof applyAdminFilter === "function") {
+    applyAdminFilter();
+  }
+  
+  console.log(`📝 Nombre actualizado para SKU ${sku}: "${nuevoNombre}"`);
+  mostrarNotificacion(`✅ Nombre actualizado: "${nuevoNombre}"`, false);
 }
 
 function renderAdminPagination(currentPage, totalPages, totalItems) {
