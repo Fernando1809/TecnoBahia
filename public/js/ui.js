@@ -132,29 +132,76 @@ function setInventoryPedidoFilter(value) {
   mostrarNotificacion(mensaje, false);
 }
 
-// Función para obtener los productos a exportar según el filtro seleccionado
+// ============================================================
+// FUNCIÓN CORREGIDA: OBTENER PRODUCTOS PARA EXPORTAR
+// PRIMERO LOS DE INVENTARIO = 0, LUEGO LOS DE MÍNIMO
+// ============================================================
+
 function getProductosParaExportar() {
   if (!state.rows || state.rows.length === 0) return [];
   
-  return state.rows.filter(r => {
-    if (r.PedidoSugerido <= 0) return false;
+  // Obtener todos los productos que tienen pedido
+  const productosConPedido = state.rows.filter(r => r.PedidoSugerido > 0);
+  
+  // Separar productos según el filtro seleccionado
+  let productosZero = [];
+  let productosMinimo = [];
+  let otrosProductos = [];
+  
+  productosConPedido.forEach(r => {
     const inventario = r.Inventario;
     const estaEnMinimo = isProductoEnMinimo(r);
+    const esManual = r._manual === true;
     
-    // SI ES MANUAL, SIEMPRE INCLUIR
-    if (r._manual === true) return true;
+    // SI ES MANUAL, SIEMPRE INCLUIR EN PRIMER LUGAR (como zero)
+    if (esManual) {
+      productosZero.push(r);
+      return;
+    }
     
+    // Verificar qué productos incluir según el filtro
     if (window.inventoryPedidoFilter.includeZero && !window.inventoryPedidoFilter.includeAtMin) {
-      return inventario === 0;
+      // Solo inventario = 0
+      if (inventario === 0) {
+        productosZero.push(r);
+      }
+    } else if (!window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
+      // Solo inventario en mínimo (excluye 0)
+      if (estaEnMinimo && inventario > 0) {
+        productosMinimo.push(r);
+      }
+    } else if (window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
+      // Inventario = 0 O en mínimo (ambos)
+      if (inventario === 0) {
+        productosZero.push(r);
+      } else if (estaEnMinimo && inventario > 0) {
+        productosMinimo.push(r);
+      }
+    } else {
+      // Todos los productos con pedido (filtro "all")
+      // En este caso, primero los zero, luego los mínimos, luego el resto
+      if (inventario === 0) {
+        productosZero.push(r);
+      } else if (estaEnMinimo) {
+        productosMinimo.push(r);
+      } else {
+        otrosProductos.push(r);
+      }
     }
-    if (!window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
-      return estaEnMinimo && inventario > 0;
-    }
-    if (window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
-      return (inventario === 0 || estaEnMinimo);
-    }
-    return true;
   });
+  
+  // Combinar: PRIMERO los que tienen inventario 0, LUEGO los que están en mínimo
+  // Y dentro de cada grupo, mantener el orden original
+  let resultado = [...productosZero, ...productosMinimo];
+  
+  // Si es el modo "all" (todos), también incluir los que no son zero ni mínimo
+  if (!window.inventoryPedidoFilter.includeZero && !window.inventoryPedidoFilter.includeAtMin) {
+    resultado = [...resultado, ...otrosProductos];
+  }
+  
+  console.log(`📦 Productos a exportar: ${resultado.length} (Zero: ${productosZero.length}, Mínimo: ${productosMinimo.length}${otrosProductos.length > 0 ? `, Otros: ${otrosProductos.length}` : ''})`);
+  
+  return resultado;
 }
 
 function renderTableDynamic(data, filterType) {
@@ -235,13 +282,41 @@ function renderTableDynamic(data, filterType) {
   }).join('')}</tr>`;
 
   if (data.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="${columns.length}" style="text-align:center; padding:40px;">No hay productos que coincidan con el filtro seleccionado<\/td><\/tr>`;
+    tbody.innerHTML = `<tr><td colspan="${columns.length}" style="text-align:center; padding:40px;">No hay productos que coincidan con el filtro seleccionado</td></tr>`;
     document.getElementById("reportPagination")?.remove();
     return;
   }
 
+  // IMPORTANTE: Para el filtro "pedido", el orden ya viene pre-ordenado desde applyFilterAndSearch()
+  // Solo aplicar ordenamiento si no es el filtro pedido O si se hizo clic en una columna
   let sortedData = [...data];
-  if (window.sortState.column) {
+  
+  // Si es filtro pedido, mantener el orden predefinido (zero primero, luego mínimo)
+  // Solo reordenar si se hizo clic en una columna explícitamente
+  if (activeFilter === "pedido" || activeFilter === "pedir") {
+    // Si el usuario hizo clic en una columna, reordenar según esa columna
+    if (window.sortState.column && window.sortState.column !== 'Inventario') {
+      sortedData.sort((a, b) => {
+        let valA = a[window.sortState.column];
+        let valB = b[window.sortState.column];
+        
+        if (valA === undefined || valA === null || valA === "") valA = 0;
+        if (valB === undefined || valB === null || valB === "") valB = 0;
+        
+        if (typeof valA === 'number' && typeof valB === 'number') {
+          return window.sortState.direction === 'desc' ? valB - valA : valA - valB;
+        }
+        const strA = String(valA).toLowerCase();
+        const strB = String(valB).toLowerCase();
+        if (window.sortState.direction === 'desc') {
+          return strB.localeCompare(strA);
+        }
+        return strA.localeCompare(strB);
+      });
+    }
+    // Si no hay columna de ordenamiento o es Inventario, mantener el orden zero -> mínimo
+    // (ya viene ordenado de applyFilterAndSearch)
+  } else if (window.sortState.column) {
     sortedData.sort((a, b) => {
       let valA = a[window.sortState.column];
       let valB = b[window.sortState.column];
@@ -304,7 +379,7 @@ function renderTableDynamic(data, filterType) {
                     onclick="confirmDeleteProduct('${escapeHtml(r.SKU)}', '${escapeHtml(r.Producto)}')">
                     🗑 Eliminar
                   </button>
-                  <\/td>`;
+                  </td>`;
       }
       
       if (col.key === "Inventario") {
@@ -313,12 +388,13 @@ function renderTableDynamic(data, filterType) {
         const estaEnMinimo = isProductoEnMinimo(r);
         const esManual = r._manual === true;
         
+        // Mostrar SOLO el número sin la palabra "(mínimo)"
         if (invValue === 0 && esManual) {
-          displayValue = `<span style="color: var(--warning); font-weight: bold;">0 (manual)</span>`;
+          displayValue = `<span style="color: var(--warning); font-weight: bold;">0</span>`;
         } else if (invValue === 0) {
           displayValue = `<span style="color: var(--danger); font-weight: bold;">0</span>`;
         } else if (estaEnMinimo) {
-          displayValue = `<span style="color: var(--warning); font-weight: bold;">${Math.floor(invValue)} (mínimo)</span>`;
+          displayValue = `<span style="color: var(--warning); font-weight: bold;">${Math.floor(invValue)}</span>`;
         } else {
           displayValue = Math.floor(invValue).toLocaleString("en-US");
         }
@@ -373,10 +449,10 @@ function renderTableDynamic(data, filterType) {
       const isNumeric = ["Inventario", "CostoUnitario", "PedidoSugerido", "CostoTotal", "Exceso", "Minimo", "Maximo"].includes(col.key);
       const styleAlign = isNumeric ? ' style="text-align: right;"' : '';
 
-      return `<td class="${className}"${styleAlign}>${displayValue}<\/td>`;
+      return `<td class="${className}"${styleAlign}>${displayValue}</td>`;
     }).join('');
 
-    return `<tr>${cells}<\/tr>`;
+    return `<tr>${cells}</tr>`;
   }).join('');
 
   renderReportPagination(totalPages, totalItems);
@@ -561,7 +637,7 @@ function handlePedidoSugeridoChange(event) {
 }
 
 // ============================================================
-// SECCIÓN 2: FILTROS Y BÚSQUEDA
+// SECCIÓN 2: FILTROS Y BÚSQUEDA (VERSIÓN CORREGIDA - CON PAGINACIÓN FUNCIONAL)
 // ============================================================
 
 function applyFilterAndSearch() {
@@ -579,28 +655,47 @@ function applyFilterAndSearch() {
     filtered = filtered.filter(r => {
       if (r.PedidoSugerido <= 0) return false;
       
-      // SI ES MANUAL, SIEMPRE MOSTRAR
       if (r._manual === true) return true;
       
       const inventario = r.Inventario;
       const estaEnMinimo = isProductoEnMinimo(r);
       
-      // ✅ CORREGIDO: Aplicar el filtro según la selección del usuario
       if (window.inventoryPedidoFilter.includeZero && !window.inventoryPedidoFilter.includeAtMin) {
-        // Solo inventario = 0
         return inventario === 0;
       }
       if (!window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
-        // Solo inventario en mínimo (excluye inventario 0)
         return estaEnMinimo && inventario > 0;
       }
       if (window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
-        // Inventario = 0 O en mínimo
         return (inventario === 0 || estaEnMinimo);
       }
-      // Todos los productos con pedido (filtro "all")
       return true;
     });
+    
+    // ORDENAR: PRIMERO LOS DE INVENTARIO = 0, LUEGO LOS DE MÍNIMO
+    filtered.sort((a, b) => {
+      const aZero = a.Inventario === 0;
+      const bZero = b.Inventario === 0;
+      const aMin = isProductoEnMinimo(a);
+      const bMin = isProductoEnMinimo(b);
+      const aManual = a._manual === true;
+      const bManual = b._manual === true;
+      
+      if (aManual && !bManual) return -1;
+      if (!aManual && bManual) return 1;
+      
+      if (aZero && !bZero) return -1;
+      if (!aZero && bZero) return 1;
+      
+      if (aMin && !bMin) return -1;
+      if (!aMin && bMin) return 1;
+      
+      return a.SKU.localeCompare(b.SKU);
+    });
+    
+    window.sortState.column = null;
+    window.sortState.direction = 'desc';
+    
   } else if (currentFilter === "exceso") {
     filtered = filtered.filter(r => {
       const hasFullRule = (r.Minimo !== "" && r.Minimo !== undefined && r.Minimo !== null) &&
@@ -628,9 +723,14 @@ function applyFilterAndSearch() {
     });
   }
 
-  console.log("📊 Total rows DESPUÉS de filtrar:", filtered.length);
+  console.log("📊 Total rows DESPUÉS de filtrar y ordenar:", filtered.length);
   
   state.filtered = filtered;
+  
+  // ⚠️ IMPORTANTE: NO resetear la paginación aquí
+  // La paginación se resetea solo cuando cambia el filtro o la búsqueda (desde los eventos)
+  // Los botones de paginación mantienen su estado
+  
   renderTableDynamic(filtered, currentFilter);
 
   const filterInfo = document.getElementById("filterInfo");
@@ -1009,23 +1109,61 @@ function renderAdminTable(data) {
   tbody.innerHTML = "";
   
   if (data.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px;">No hay SKUs registrados<\/td><\/tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px;">No hay SKUs registrados</td></tr>';
     return;
   }
   
   data.forEach(r => {
     const tr = document.createElement("tr");
     const nombreProducto = r.Producto && r.Producto !== "" ? r.Producto : "Sin nombre";
+    
+    // Obtener estado de confirmación desde admin.js
+    const confirmado = typeof getConfirmacionStatus === 'function' ? getConfirmacionStatus(r.SKU) : false;
+    const checked = confirmado ? 'checked' : '';
+    
     tr.innerHTML = `
-        <td>${escapeHtml(r.SKU)}<\/td>
-        <td>${escapeHtml(nombreProducto)}<\/td>
-        <td><input type="number" min="0" step="1" data-role="min" data-sku="${escapeHtml(r.SKU)}" value="${escapeHtml(r.Minimo)}" style="width:90px;"><\/td>
-        <td><input type="number" min="0" step="1" data-role="max" data-sku="${escapeHtml(r.SKU)}" value="${escapeHtml(r.Maximo)}" style="width:90px;"><\/td>
-        <td><button class="btn-secondary" style="background:var(--danger); color:white; padding:4px 8px;" data-delete-sku="${escapeHtml(r.SKU)}">🗑<\/button><\/td>
+      <td>${escapeHtml(r.SKU)}</td>
+      <td>${escapeHtml(nombreProducto)}</td>
+      <td><input type="number" min="0" step="1" data-role="min" data-sku="${escapeHtml(r.SKU)}" value="${escapeHtml(r.Minimo)}" style="width:90px;"></td>
+      <td><input type="number" min="0" step="1" data-role="max" data-sku="${escapeHtml(r.SKU)}" value="${escapeHtml(r.Maximo)}" style="width:90px;"></td>
+      <td style="text-align: center;">
+        <input type="checkbox" 
+               class="confirm-checkbox" 
+               data-sku="${escapeHtml(r.SKU)}" 
+               ${checked}
+               style="width: 20px; height: 20px; cursor: pointer; accent-color: #22c55e;">
+        <span style="font-size: 11px; color: var(--text-secondary); display: block; margin-top: 2px;">
+          ${confirmado ? '✅ Confirmado' : '⬜ Pendiente'}
+        </span>
+      </td>
+      <td><button class="btn-secondary" style="background:var(--danger); color:white; padding:4px 8px; cursor:pointer; border:none; border-radius:4px;" data-delete-sku="${escapeHtml(r.SKU)}">🗑</button></td>
     `;
     tbody.appendChild(tr);
   });
 
+  // Event listener para checkboxes
+  document.querySelectorAll('.confirm-checkbox').forEach(checkbox => {
+    checkbox.addEventListener('change', function(e) {
+      const sku = this.getAttribute('data-sku');
+      if (typeof toggleConfirmacionRegla === 'function') {
+        toggleConfirmacionRegla(sku);
+      } else {
+        // Fallback si la función no existe
+        if (state.adminRules[sku]) {
+          state.adminRules[sku].confirmado = this.checked;
+          if (typeof persistRules === 'function') persistRules();
+        }
+      }
+      
+      const parentTd = this.closest('td');
+      const statusSpan = parentTd.querySelector('span');
+      if (statusSpan) {
+        statusSpan.textContent = this.checked ? '✅ Confirmado' : '⬜ Pendiente';
+      }
+    });
+  });
+
+  // Event listener para botones de eliminar
   document.querySelectorAll('[data-delete-sku]').forEach(btn => {
     btn.addEventListener('click', () => {
       const sku = btn.getAttribute('data-delete-sku');

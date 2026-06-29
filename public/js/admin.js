@@ -551,24 +551,99 @@ function clearAllRules() {
   }
 }
 
+// ============================================================
+// FUNCIÓN MEJORADA: AGREGAR NUEVO SKU
+// ============================================================
+
 function addNewSku() {
   if (!state.adminUnlocked) return;
+  
   const newSku = prompt("Ingrese el nuevo SKU (código):");
   if (!newSku || newSku.trim() === "") return;
-  const skuTrim = newSku.trim();
+  const skuTrim = newSku.trim().toUpperCase();
   
   if (state.adminRules[skuTrim]) {
     alert(`El SKU "${skuTrim}" ya existe.`);
     return;
   }
   
+  // Buscar el nombre del producto en diferentes fuentes
   let producto = "";
+  
+  // 1. Buscar en listaCompleta (precios)
   if (state.listaCompleta) {
     const found = state.listaCompleta.find(item => item.CODIGO === skuTrim);
-    if (found) producto = found.DESCRIPCION;
+    if (found && found.DESCRIPCION) {
+      producto = found.DESCRIPCION;
+    }
   }
   
-  state.adminRules[skuTrim] = { minimo: "", maximo: "", producto: producto || skuTrim, confirmado: false };
+  // 2. Si no se encuentra en precios, buscar en rows (inventario)
+  if (!producto && state.rows) {
+    const found = state.rows.find(item => item.SKU === skuTrim);
+    if (found && found.Producto) {
+      producto = found.Producto;
+    }
+  }
+  
+  // 3. Si no se encuentra, permitir que el usuario ingrese el nombre manualmente
+  if (!producto) {
+    const nombreIngresado = prompt(
+      `No se encontró información del producto "${skuTrim}".\n` +
+      `Ingresa el nombre del producto (opcional, presiona Cancelar para usar el SKU como nombre):`
+    );
+    if (nombreIngresado !== null && nombreIngresado.trim() !== "") {
+      producto = nombreIngresado.trim();
+    } else if (nombreIngresado === "") {
+      // Si el usuario ingresa vacío, usar SKU
+      producto = skuTrim;
+    } else {
+      // Si el usuario cancela, usar SKU
+      producto = skuTrim;
+    }
+  }
+  
+  // Si aún no tiene nombre, usar el SKU
+  if (!producto) producto = skuTrim;
+  
+  // Preguntar si quiere establecer un mínimo y máximo inicial
+  let minimo = "";
+  let maximo = "";
+  const establecerReglas = confirm(
+    `¿Deseas establecer valores de mínimo y máximo para "${skuTrim}" ahora?\n` +
+    `(Si no, podrás hacerlo más tarde desde la tabla)`
+  );
+  
+  if (establecerReglas) {
+    const minInput = prompt(`Ingresa el valor MÍNIMO para "${skuTrim}":`);
+    if (minInput !== null && minInput.trim() !== "") {
+      const minVal = parseFloat(minInput.trim().replace(/,/g, "."));
+      if (!isNaN(minVal) && minVal >= 0) {
+        minimo = minVal;
+      } else {
+        setStatus("⚠️ Valor mínimo inválido, se dejará vacío.", true);
+      }
+    }
+    
+    const maxInput = prompt(`Ingresa el valor MÁXIMO para "${skuTrim}":`);
+    if (maxInput !== null && maxInput.trim() !== "") {
+      const maxVal = parseFloat(maxInput.trim().replace(/,/g, "."));
+      if (!isNaN(maxVal) && maxVal >= 0) {
+        maximo = maxVal;
+      } else {
+        setStatus("⚠️ Valor máximo inválido, se dejará vacío.", true);
+      }
+    }
+  }
+  
+  // Agregar el SKU con los valores
+  state.adminRules[skuTrim] = {
+    minimo: minimo,
+    maximo: maximo,
+    producto: producto,
+    confirmado: false
+  };
+  
   persistRules();
   recalculateRows();
   applyAdminFilter();
@@ -583,11 +658,24 @@ function addNewSku() {
     totalCount: Object.keys(state.adminRules).length
   }).catch(e => console.warn("No se pudo guardar metadata de reglas"));
   
-  setStatus(`✅ SKU "${skuTrim}" agregado.`, false);
+  // También agregar a listaCompleta si no existe
+  if (!state.listaCompleta.some(item => item.CODIGO === skuTrim)) {
+    state.listaCompleta.push({
+      CODIGO: skuTrim,
+      DESCRIPCION: producto,
+      PRECIO_SIN_IVA: state.preciosLookup[skuTrim] || 0
+    });
+    if (typeof saveListaCompleta === "function") {
+      saveListaCompleta();
+    }
+  }
+  
+  setStatus(`✅ SKU "${skuTrim}" agregado con nombre "${producto}"${minimo || maximo ? ` (Mín: ${minimo || '-'} / Máx: ${maximo || '-'})` : ''}`, false);
+  mostrarNotificacion(`✅ SKU "${skuTrim}" agregado correctamente`, false);
 }
 
 // ============================================================
-// FUNCIÓN CORREGIDA: IMPORTAR REGLAS - NO OMITE NINGÚN SKU
+// FUNCIÓN CORREGIDA: IMPORTAR REGLAS - DETECCIÓN AUTOMÁTICA DE COLUMNAS
 // ============================================================
 
 function importRulesExcel() {
@@ -622,80 +710,189 @@ function importRulesExcel() {
       
       console.log("📋 Archivo cargado. Total filas:", rows.length);
       
-      // ÍNDICES FIJOS para tu archivo CSV
-      const skuCol = 0;
-      const prodCol = 1;
-      const minCol = 2;
-      const maxCol = 3;
+      // ============================================================
+      // DETECCIÓN AUTOMÁTICA DE COLUMNAS POR NOMBRE
+      // ============================================================
       
-      console.log(`✅ Usando: SKU col ${skuCol}, Producto col ${prodCol}, Min col ${minCol}, Max col ${maxCol}`);
+      const headerRow = rows[0] || [];
+      console.log("📋 Encabezados encontrados:", headerRow);
+      
+      let skuCol = -1;
+      let prodCol = -1;
+      let minCol = -1;
+      let maxCol = -1;
+      
+      // Buscar columnas por nombre (sin importar el orden)
+      headerRow.forEach((header, index) => {
+        const h = String(header || "").trim().toLowerCase()
+          .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        
+        // Buscar SKU (código)
+        if (h.includes("sku") || h.includes("codigo") || h.includes("cod") || h.includes("item")) {
+          if (skuCol === -1) skuCol = index;
+          console.log(`✅ Columna SKU encontrada en índice ${index}: "${header}"`);
+        }
+        // Buscar Producto (item, descripción, nombre)
+        if (h.includes("item") || h.includes("producto") || h.includes("descripcion") || h.includes("nombre")) {
+          if (prodCol === -1 || h === "item") prodCol = index;
+          console.log(`✅ Columna Producto encontrada en índice ${index}: "${header}"`);
+        }
+        // Buscar Minimo
+        if (h.includes("min") || h.includes("minimo")) {
+          if (minCol === -1) minCol = index;
+          console.log(`✅ Columna Minimo encontrada en índice ${index}: "${header}"`);
+        }
+        // Buscar Maximo
+        if (h.includes("max") || h.includes("maximo")) {
+          if (maxCol === -1) maxCol = index;
+          console.log(`✅ Columna Maximo encontrada en índice ${index}: "${header}"`);
+        }
+      });
+      
+      // Si no se encontraron por nombre, usar índices por defecto
+      if (skuCol === -1) { skuCol = 0; console.warn("⚠️ Usando SKU col 0 por defecto"); }
+      if (prodCol === -1) { prodCol = 1; console.warn("⚠️ Usando Producto col 1 por defecto"); }
+      if (minCol === -1) { minCol = 2; console.warn("⚠️ Usando Minimo col 2 por defecto"); }
+      if (maxCol === -1) { maxCol = 3; console.warn("⚠️ Usando Maximo col 3 por defecto"); }
+      
+      console.log(`📋 Mapa final: SKU=${skuCol}, Producto=${prodCol}, Min=${minCol}, Max=${maxCol}`);
+      
+      // ============================================================
+      // PROCESAR TODAS LAS FILAS (INCLUYENDO LAS QUE NO TIENEN PRECIO)
+      // ============================================================
       
       let importedCount = 0;
       let conReglas = 0;
       let sinReglas = 0;
+      let errores = [];
       
-      state.adminRules = {};
-      localStorage.removeItem('tecnobahia_skus_sin_reglas');
+      // IMPORTANTE: NO LIMPIAR state.adminRules, FUSIONAR
+      // Si quieres reemplazar, descomenta la línea de abajo:
+      // state.adminRules = {};
+      // localStorage.removeItem('tecnobahia_skus_sin_reglas');
       
+      // Recorrer desde la fila 1 (saltando encabezados)
       for (let i = 1; i < rows.length; i++) {
         const row = rows[i];
         if (!row) continue;
         
+        // Verificar si la fila está vacía
+        const tieneDatos = row.some(cell => String(cell || "").trim() !== "");
+        if (!tieneDatos) continue;
+        
+        // Obtener SKU
         let sku = "";
         if (row[skuCol] !== undefined && row[skuCol] !== null && row[skuCol] !== "") {
-          sku = String(row[skuCol]).trim();
+          sku = String(row[skuCol]).trim().toUpperCase();
         }
         
         if (!sku) continue;
         
+        // Obtener Producto
         let producto = "";
         if (row[prodCol] !== undefined && row[prodCol] !== null && row[prodCol] !== "") {
           producto = String(row[prodCol]).trim();
         }
-        
         if (!producto) producto = sku;
         
+        // Obtener Minimo (manejar valores con coma como separador decimal)
         let minimo = null;
         if (row[minCol] !== undefined && row[minCol] !== null && row[minCol] !== "") {
-          const minVal = String(row[minCol]).trim();
-          if (minVal !== "" && !isNaN(Number(minVal))) {
+          const minVal = String(row[minCol]).trim().replace(/,/g, ".");
+          if (minVal !== "" && !isNaN(Number(minVal)) && Number(minVal) >= 0) {
             minimo = Number(minVal);
           }
         }
         
+        // Obtener Maximo
         let maximo = null;
         if (row[maxCol] !== undefined && row[maxCol] !== null && row[maxCol] !== "") {
-          const maxVal = String(row[maxCol]).trim();
-          if (maxVal !== "" && !isNaN(Number(maxVal))) {
+          const maxVal = String(row[maxCol]).trim().replace(/,/g, ".");
+          if (maxVal !== "" && !isNaN(Number(maxVal)) && Number(maxVal) >= 0) {
             maximo = Number(maxVal);
           }
         }
         
-        state.adminRules[sku] = {
-          minimo: (minimo !== null && !isNaN(minimo)) ? minimo : "",
-          maximo: (maximo !== null && !isNaN(maximo)) ? maximo : "",
-          producto: producto,
-          confirmado: false  // Inicialmente no confirmado
-        };
+        // IMPORTANTE: Guardar SIEMPRE el SKU, tenga o no reglas
+        // Si ya existe, actualizar
+        if (!state.adminRules[sku]) {
+          state.adminRules[sku] = {
+            minimo: "",
+            maximo: "",
+            producto: producto,
+            confirmado: false
+          };
+        } else {
+          // Preservar el producto existente si no tiene
+          if (!state.adminRules[sku].producto) {
+            state.adminRules[sku].producto = producto;
+          }
+        }
+        
+        // Actualizar minimo si tiene valor
+        if (minimo !== null && !isNaN(minimo)) {
+          state.adminRules[sku].minimo = minimo;
+        }
+        
+        // Actualizar maximo si tiene valor
+        if (maximo !== null && !isNaN(maximo)) {
+          state.adminRules[sku].maximo = maximo;
+        }
         
         importedCount++;
-        if (minimo !== null && maximo !== null) {
+        
+        // Contar reglas
+        const tieneMin = state.adminRules[sku].minimo !== "" && state.adminRules[sku].minimo !== null;
+        const tieneMax = state.adminRules[sku].maximo !== "" && state.adminRules[sku].maximo !== null;
+        if (tieneMin || tieneMax) {
           conReglas++;
         } else {
           sinReglas++;
         }
         
+        // Verificar si el SKU tiene precio (solo advertencia, NO eliminar)
+        if (!state.preciosLookup || !state.preciosLookup[sku]) {
+          if (errores.length < 20) {
+            errores.push(`SKU sin precio: ${sku}`);
+          }
+        }
+        
+        // Mostrar progreso cada 1000 SKUs
         if (importedCount % 1000 === 0) {
           console.log(`📦 Procesados ${importedCount} SKUs...`);
         }
       }
       
       console.log(`✅ Total procesados: ${importedCount} SKUs`);
-      console.log(`📊 Con reglas: ${conReglas}`);
+      console.log(`📊 Con reglas (mín o máx): ${conReglas}`);
       console.log(`📭 Sin reglas: ${sinReglas}`);
+      
+      if (errores.length > 0) {
+        console.warn(`⚠️ ${errores.length} SKUs sin precio (no afecta la importación):`, errores.slice(0, 10));
+      }
+      
+      // ============================================================
+      // GUARDAR Y ACTUALIZAR
+      // ============================================================
       
       await persistRules();
       
+      // Actualizar listaCompleta con los SKUs importados (si no existen)
+      for (const sku in state.adminRules) {
+        if (!state.listaCompleta.some(item => item.CODIGO === sku)) {
+          state.listaCompleta.push({
+            CODIGO: sku,
+            DESCRIPCION: state.adminRules[sku].producto || sku,
+            PRECIO_SIN_IVA: state.preciosLookup[sku] || 0
+          });
+        }
+      }
+      
+      if (typeof saveListaCompleta === "function") {
+        await saveListaCompleta();
+      }
+      
+      // Refrescar
       if (typeof applyAdminFilter === "function") {
         applyAdminFilter();
       }
@@ -713,22 +910,17 @@ function importRulesExcel() {
       
       fileInput.value = "";
       
-      const mensaje = `✅ Procesados ${importedCount} SKUs.\n📊 Con reglas: ${conReglas}\n📭 Sin reglas: ${sinReglas}`;
+      // Mostrar resumen completo
+      let mensaje = `✅ Procesados ${importedCount} SKUs.\n📊 Con reglas: ${conReglas}\n📭 Sin reglas: ${sinReglas}`;
+      if (errores.length > 0) {
+        mensaje += `\n⚠️ ${errores.length} SKUs sin precio (se importaron igual).`;
+      }
       alert(mensaje);
       setStatus(mensaje, false);
       
-      for (const sku in state.adminRules) {
-        if (!state.listaCompleta.some(item => item.CODIGO === sku)) {
-          state.listaCompleta.push({
-            CODIGO: sku,
-            DESCRIPCION: state.adminRules[sku].producto || sku,
-            PRECIO_SIN_IVA: state.preciosLookup[sku] || 0
-          });
-        }
-      }
-      
-      if (typeof saveListaCompleta === "function") {
-        await saveListaCompleta();
+      // Recalcular todo
+      if (typeof recalculateRows === "function") {
+        recalculateRows();
       }
       
     } catch (err) {
