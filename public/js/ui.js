@@ -214,12 +214,13 @@ function renderTableDynamic(data, filterType) {
   let columns = [];
   
   if (activeFilter === "pedido" || activeFilter === "pedir") {
+    // 🔴 NUEVO ORDEN: Inventario -> Pedido -> Costo unitario -> Costo Total
     columns = [
       { key: "SKU", label: "SKU", sortable: true },
       { key: "Producto", label: "Producto", sortable: false },
       { key: "Inventario", label: "Inventario", sortable: true },
-      { key: "CostoUnitario", label: "Costo unitario", sortable: true },
       { key: "PedidoSugerido", label: "Pedido", sortable: true },
+      { key: "CostoUnitario", label: "Costo unitario", sortable: true },
       { key: "CostoTotal", label: "Costo total", sortable: true },
       { key: "Acciones", label: "", sortable: false }
     ];
@@ -287,12 +288,9 @@ function renderTableDynamic(data, filterType) {
     return;
   }
 
-  // IMPORTANTE: Para el filtro "pedido", el orden ya viene pre-ordenado desde applyFilterAndSearch()
-  // Solo aplicar ordenamiento si no es el filtro pedido O si se hizo clic en una columna
+  // Para el filtro "pedido", ordenar: primero inventario 0, luego mínimo
   let sortedData = [...data];
   
-  // Si es filtro pedido, mantener el orden predefinido (zero primero, luego mínimo)
-  // Solo reordenar si se hizo clic en una columna explícitamente
   if (activeFilter === "pedido" || activeFilter === "pedir") {
     // Si el usuario hizo clic en una columna, reordenar según esa columna
     if (window.sortState.column && window.sortState.column !== 'Inventario') {
@@ -314,8 +312,7 @@ function renderTableDynamic(data, filterType) {
         return strA.localeCompare(strB);
       });
     }
-    // Si no hay columna de ordenamiento o es Inventario, mantener el orden zero -> mínimo
-    // (ya viene ordenado de applyFilterAndSearch)
+    // Si no hay ordenamiento o es Inventario, mantener orden: zero primero, luego mínimo
   } else if (window.sortState.column) {
     sortedData.sort((a, b) => {
       let valA = a[window.sortState.column];
@@ -388,7 +385,6 @@ function renderTableDynamic(data, filterType) {
         const estaEnMinimo = isProductoEnMinimo(r);
         const esManual = r._manual === true;
         
-        // Mostrar SOLO el número sin la palabra "(mínimo)"
         if (invValue === 0 && esManual) {
           displayValue = `<span style="color: var(--warning); font-weight: bold;">0</span>`;
         } else if (invValue === 0) {
