@@ -316,10 +316,10 @@ function updateMetrics(rows) {
       
       const inventario = r.Inventario;
       
-      // Verificar si está en mínimo
+      // Verificar si está en mínimo o por debajo de él
       const minimo = r.Minimo;
       const estaEnMinimo = (minimo !== undefined && minimo !== "" && minimo !== null && !isNaN(minimo)) 
-                            ? Number(inventario) === Number(minimo) 
+                            ? Number(inventario) <= Number(minimo) 
                             : false;
       
       if (window.inventoryPedidoFilter.includeZero && inventario === 0) return true;

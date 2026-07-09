@@ -39,13 +39,13 @@ function confirmDeleteProduct(sku, producto) {
   }
 }
 
-// Función para verificar si un producto está en su mínimo
+// Función para verificar si un producto está en su mínimo o por debajo de él
 function isProductoEnMinimo(producto) {
   const minimo = producto.Minimo;
   const inventario = producto.Inventario;
   
   if (minimo !== undefined && minimo !== "" && minimo !== null && !isNaN(minimo)) {
-    return Number(inventario) === Number(minimo);
+    return Number(inventario) <= Number(minimo);
   }
   return false;
 }
