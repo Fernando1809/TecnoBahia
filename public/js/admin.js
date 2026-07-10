@@ -304,14 +304,16 @@ async function logoutAdmin() {
 }
 
 // ============================================================
-// SECCIÓN 3: REGLAS DE STOCK (KOLO) - VERSIÓN OPTIMIZADA
+// SECCIÓN 3: REGLAS DE STOCK (KOLO) - VERSIÓN CORREGIDA
 // ============================================================
 
 async function loadRules() {
   try {
+    // 🔴 CORREGIDO: Cargar desde Firestore primero
     const data = await firestoreGetDocData("adminRules");
     const rulesWithValues = data.adminRules || {};
     
+    // Cargar SKUs sin reglas desde localStorage (solo como fallback)
     let skusSinReglas = {};
     const savedSinReglas = localStorage.getItem('tecnobahia_skus_sin_reglas');
     if (savedSinReglas) {
@@ -323,11 +325,19 @@ async function loadRules() {
       }
     }
     
-    state.adminRules = { ...skusSinReglas, ...rulesWithValues };
+    // 🔴 Firestore tiene PRIORIDAD sobre localStorage
+    state.adminRules = { ...rulesWithValues };
+    
+    // Agregar SKUs sin reglas que NO estén en Firestore
+    for (const sku in skusSinReglas) {
+      if (!state.adminRules[sku]) {
+        state.adminRules[sku] = skusSinReglas[sku];
+      }
+    }
     
     console.log("📋 Reglas KOLO cargadas:", Object.keys(state.adminRules).length);
-    console.log(`   - Con reglas: ${Object.keys(rulesWithValues).length}`);
-    console.log(`   - Sin reglas: ${Object.keys(skusSinReglas).length}`);
+    console.log(`   - Con reglas (Firestore): ${Object.keys(rulesWithValues).length}`);
+    console.log(`   - Sin reglas (localStorage): ${Object.keys(skusSinReglas).length}`);
     
     const metadata = await firestoreGetDocData("reglasMetadata");
     if (metadata && metadata.lastUpdate) {
@@ -343,6 +353,10 @@ async function loadRules() {
     if (typeof applyAdminFilter === "function") {
       applyAdminFilter();
     }
+    
+    // 🔴 Sincronizar localStorage con Firestore después de cargar
+    await persistRules();
+    
   } catch (e) {
     console.error("Error cargando reglas:", e);
     state.adminRules = {};
@@ -350,36 +364,55 @@ async function loadRules() {
 }
 
 async function persistRules() {
+  // 🔴 CORREGIDO: Separar reglas con valores de las que no tienen
   const rulesWithValues = {};
+  const skusSinReglas = {};
+  
   for (const sku in state.adminRules) {
     const rule = state.adminRules[sku];
-    if ((rule.minimo !== "" && rule.minimo !== null && rule.minimo !== undefined) || 
-        (rule.maximo !== "" && rule.maximo !== null && rule.maximo !== undefined) ||
-        rule.confirmado === true) {
-      rulesWithValues[sku] = rule;
+    const hasMin = (rule.minimo !== "" && rule.minimo !== null && rule.minimo !== undefined);
+    const hasMax = (rule.maximo !== "" && rule.maximo !== null && rule.maximo !== undefined);
+    const isConfirmed = rule.confirmado === true;
+    
+    if (hasMin || hasMax || isConfirmed) {
+      // Guardar en Firestore si tiene reglas o está confirmado
+      rulesWithValues[sku] = {
+        minimo: hasMin ? rule.minimo : "",
+        maximo: hasMax ? rule.maximo : "",
+        producto: rule.producto || sku,
+        confirmado: isConfirmed
+      };
+    } else {
+      // Guardar en localStorage si NO tiene reglas
+      skusSinReglas[sku] = {
+        minimo: "",
+        maximo: "",
+        producto: rule.producto || sku,
+        confirmado: false
+      };
     }
   }
   
   console.log(`💾 Guardando ${Object.keys(rulesWithValues).length} SKUs en Firestore`);
-  console.log(`💾 Total SKUs en memoria: ${Object.keys(state.adminRules).length}`);
+  console.log(`💾 Guardando ${Object.keys(skusSinReglas).length} SKUs en localStorage`);
   
   try {
+    // Guardar en Firestore
     await firestoreSetDocData("adminRules", { adminRules: rulesWithValues });
     console.log("✅ Reglas guardadas en Firestore");
+    
+    // Guardar metadata
+    await firestoreSetDocData("reglasMetadata", {
+      lastUpdate: new Date().toISOString(),
+      fileName: reglasFileName || "Reglas KOLO",
+      totalCount: Object.keys(state.adminRules).length
+    }).catch(e => console.warn("No se pudo guardar metadata de reglas"));
+    
   } catch (err) {
     console.error("❌ Error guardando en Firestore:", err);
   }
   
-  const skusSinReglas = {};
-  for (const sku in state.adminRules) {
-    const rule = state.adminRules[sku];
-    if ((rule.minimo === "" || rule.minimo === null || rule.minimo === undefined) && 
-        (rule.maximo === "" || rule.maximo === null || rule.maximo === undefined) &&
-        rule.confirmado !== true) {
-      skusSinReglas[sku] = rule;
-    }
-  }
-  
+  // Guardar SKUs sin reglas en localStorage
   if (Object.keys(skusSinReglas).length > 0) {
     localStorage.setItem('tecnobahia_skus_sin_reglas', JSON.stringify(skusSinReglas));
     console.log(`💾 ${Object.keys(skusSinReglas).length} SKUs sin reglas guardados en localStorage`);
@@ -514,21 +547,17 @@ function saveRulesFromInputs() {
   reglasFileName = "Reglas KOLO editadas manualmente";
   updateReglasStatusDisplay();
   
-  firestoreSetDocData("reglasMetadata", {
-    lastUpdate: reglasLastUpdate.toISOString(),
-    fileName: "Reglas KOLO editadas manualmente",
-    totalCount: Object.keys(state.adminRules).length
-  }).catch(e => console.warn("No se pudo guardar metadata de reglas"));
-  
   setStatus("✅ Reglas guardadas correctamente", false);
 }
 
 function clearAllRules() {
   if (!state.adminUnlocked) return;
   if (confirm("⚠️ ¿Eliminar SOLO las reglas de mínimos y máximos?\n\nLos SKUs seguirán apareciendo, solo se eliminarán los valores de mínimo y máximo.")) {
+    // 🔴 CORREGIDO: No eliminar los SKUs, solo los valores de min y max
     for (const sku in state.adminRules) {
       state.adminRules[sku].minimo = "";
       state.adminRules[sku].maximo = "";
+      // Mantener el nombre y confirmado
     }
     persistRules();
     recalculateRows();
@@ -630,12 +659,6 @@ function addNewSku() {
   reglasFileName = "SKU agregado manualmente";
   updateReglasStatusDisplay();
   
-  firestoreSetDocData("reglasMetadata", {
-    lastUpdate: reglasLastUpdate.toISOString(),
-    fileName: "SKU agregado manualmente",
-    totalCount: Object.keys(state.adminRules).length
-  }).catch(e => console.warn("No se pudo guardar metadata de reglas"));
-  
   if (!state.listaCompleta.some(item => item.CODIGO === skuTrim)) {
     state.listaCompleta.push({
       CODIGO: skuTrim,
@@ -687,7 +710,6 @@ function importRulesExcel() {
       
       console.log("📋 Archivo cargado. Total filas:", rows.length);
       
-      // DETECCIÓN AUTOMÁTICA DE COLUMNAS
       const headerRow = rows[0] || [];
       console.log("📋 Encabezados encontrados:", headerRow);
       
@@ -836,12 +858,6 @@ function importRulesExcel() {
       
       reglasLastUpdate = new Date();
       reglasFileName = file.name;
-      
-      await firestoreSetDocData("reglasMetadata", {
-        lastUpdate: reglasLastUpdate.toISOString(),
-        fileName: file.name,
-        totalCount: Object.keys(state.adminRules).length
-      }).catch(e => console.warn("No se pudo guardar metadata de reglas"));
       
       fileInput.value = "";
       
@@ -1758,7 +1774,8 @@ async function clearAllItems() {
     state.listaCompleta = [];
     state.preciosLookup = {};
     
-    await persistRules();
+    // 🔴 CORREGIDO: Limpiar Firestore también
+    await firestoreSetDocData("adminRules", { adminRules: {} });
     
     await firestoreSetDocData("reglasMetadata", {
       lastUpdate: new Date().toISOString(),
