@@ -19,7 +19,10 @@ const state = {
   pedidoTemplateName: null,
   inventoryOrigin: null,
   currentView: "report",
-  darkMode: false
+  darkMode: false,
+  bulkSelection: {
+    selectedSKUs: []
+  }
 };
 
 window.firebaseReady = window.firebaseReady || new Promise(resolve => { 

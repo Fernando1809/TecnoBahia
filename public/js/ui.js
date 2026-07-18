@@ -23,23 +23,134 @@ if (typeof window.reportPageState === 'undefined') {
 // Estado del filtro de inventario para pedido
 if (typeof window.inventoryPedidoFilter === 'undefined') {
   window.inventoryPedidoFilter = {
-    includeZero: true,
-    includeAtMin: true
+    includeZero: false,
+    includeAtMin: false
   };
 }
 
-// Función global para confirmar eliminación
-function confirmDeleteProduct(sku, producto) {
-  if (confirm(`¿Deseas eliminar "${producto}" (${sku}) de la lista de pedido?`)) {
-    state.rows = state.rows.filter(item => item.SKU !== sku);
-    if (typeof updateMetrics === "function") updateMetrics(state.rows);
-    if (typeof resetReportPagination === "function") resetReportPagination();
-    if (typeof applyFilterAndSearch === "function") applyFilterAndSearch();
-    if (typeof setStatus === "function") setStatus(`✅ Producto "${producto}" eliminado`, false);
+if (typeof state.bulkSelection === 'undefined') {
+  state.bulkSelection = {
+    selectedSKUs: []
+  };
+}
+
+function getBulkSelectionState() {
+  if (!state.bulkSelection) {
+    state.bulkSelection = { selectedSKUs: [] };
+  }
+  if (!Array.isArray(state.bulkSelection.selectedSKUs)) {
+    state.bulkSelection.selectedSKUs = [];
+  }
+  return state.bulkSelection;
+}
+
+function updateBulkSelectionToolbar() {
+  const selectionState = getBulkSelectionState();
+  const count = selectionState.selectedSKUs.length;
+  const deleteBtn = document.getElementById("bulkDeleteBtn");
+  const clearBtn = document.getElementById("clearBulkSelectionBtn");
+  const info = document.getElementById("bulkSelectionInfo");
+
+  if (deleteBtn) {
+    deleteBtn.disabled = count === 0;
+    deleteBtn.textContent = count > 0 ? `🗑 Eliminar ${count} seleccionados` : "🗑 Eliminar seleccionados";
+  }
+
+  if (clearBtn) {
+    clearBtn.style.display = count > 0 ? "inline-flex" : "none";
+  }
+
+  if (info) {
+    info.textContent = count > 0 ? `${count} seleccionado${count > 1 ? "s" : ""}` : "Ninguno seleccionado";
   }
 }
 
-// Función para verificar si un producto está en su mínimo o por debajo de él
+function toggleRowSelection(sku, checked) {
+  const selectionState = getBulkSelectionState();
+  if (!sku) return;
+
+  if (checked) {
+    if (!selectionState.selectedSKUs.includes(sku)) {
+      selectionState.selectedSKUs.push(sku);
+    }
+  } else {
+    selectionState.selectedSKUs = selectionState.selectedSKUs.filter(item => item !== sku);
+  }
+
+  updateBulkSelectionToolbar();
+}
+
+function clearBulkSelection() {
+  const selectionState = getBulkSelectionState();
+  selectionState.selectedSKUs = [];
+
+  document.querySelectorAll('.table-row-select-checkbox').forEach(checkbox => {
+    checkbox.checked = false;
+  });
+
+  const masterCheckbox = document.getElementById("selectAllVisibleCheckbox");
+  if (masterCheckbox) {
+    masterCheckbox.checked = false;
+    masterCheckbox.indeterminate = false;
+  }
+
+  updateBulkSelectionToolbar();
+}
+
+function handleRowSelectionChange(event) {
+  const checkbox = event.target;
+  const sku = checkbox.getAttribute('data-sku');
+  if (!sku) return;
+
+  toggleRowSelection(sku, checkbox.checked);
+
+  const visibleCheckboxes = document.querySelectorAll('.table-row-select-checkbox');
+  const checkedCount = Array.from(visibleCheckboxes).filter(item => item.checked).length;
+  const masterCheckbox = document.getElementById("selectAllVisibleCheckbox");
+
+  if (masterCheckbox) {
+    masterCheckbox.checked = visibleCheckboxes.length > 0 && checkedCount === visibleCheckboxes.length;
+    masterCheckbox.indeterminate = checkedCount > 0 && checkedCount < visibleCheckboxes.length;
+  }
+}
+
+function handleSelectAllVisibleChange(event) {
+  const checked = event.target.checked;
+  document.querySelectorAll('.table-row-select-checkbox').forEach(checkbox => {
+    const sku = checkbox.getAttribute('data-sku');
+    checkbox.checked = checked;
+    toggleRowSelection(sku, checked);
+  });
+
+  updateBulkSelectionToolbar();
+}
+
+function bulkDeleteSelectedProducts() {
+  const selectionState = getBulkSelectionState();
+  const selectedSKUs = [...selectionState.selectedSKUs];
+  if (selectedSKUs.length === 0) return;
+
+  const selectedProducts = state.rows.filter(item => selectedSKUs.includes(item.SKU));
+  const preview = selectedProducts.slice(0, 3).map(item => item.Producto || item.SKU).join(", ");
+  const suffix = selectedProducts.length > 3 ? ` y ${selectedProducts.length - 3} más` : "";
+
+  if (!confirm(`¿Deseas eliminar ${selectedProducts.length} producto(s) seleccionados?\n${preview}${suffix}`)) {
+    return;
+  }
+
+  const skuSet = new Set(selectedSKUs);
+  state.rows = state.rows.filter(item => !skuSet.has(item.SKU));
+  clearBulkSelection();
+
+  if (typeof updateMetrics === "function") updateMetrics(state.rows);
+  if (typeof recalcularTotalPorFiltroInventario === "function") recalcularTotalPorFiltroInventario();
+  if (typeof resetReportPagination === "function") resetReportPagination();
+  if (typeof applyFilterAndSearch === "function") applyFilterAndSearch();
+  if (typeof setStatus === "function") setStatus(`✅ Se eliminaron ${selectedProducts.length} productos seleccionados`, false);
+}
+
+// Función para verificar si un producto está en su mínimo o por debajo de él.
+// Esto solo se usa para filtros visuales; la matemática del pedido depende del máximo.
 function isProductoEnMinimo(producto) {
   const minimo = producto.Minimo;
   const inventario = producto.Inventario;
@@ -60,30 +171,22 @@ function recalcularTotalPorFiltroInventario() {
     const inventario = r.Inventario;
     const estaEnMinimo = isProductoEnMinimo(r);
     
-    // SI ES MANUAL, SIEMPRE INCLUIR
-    if (r._manual === true) return true;
-    
     if (window.inventoryPedidoFilter.includeZero && !window.inventoryPedidoFilter.includeAtMin) {
       return inventario === 0;
     }
     if (!window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
       return estaEnMinimo && inventario > 0;
     }
-    if (window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
-      return (inventario === 0 || estaEnMinimo);
-    }
     return true;
   });
   
-  const subtotalSinIva = productosParaPedido.reduce((acc, r) => {
+  const totalPedido = productosParaPedido.reduce((acc, r) => {
     return acc + (r.CostoTotal !== null && !isNaN(r.CostoTotal) ? r.CostoTotal : 0);
   }, 0);
   
-  const totalConIva = subtotalSinIva * 1.14;
-  
   const elCantPedido = document.getElementById("mCantPedido");
   if (elCantPedido) {
-    elCantPedido.textContent = "$" + totalConIva.toLocaleString("en-US", {
+    elCantPedido.textContent = "$" + totalPedido.toLocaleString("en-US", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     });
@@ -94,7 +197,7 @@ function recalcularTotalPorFiltroInventario() {
     elPedido.textContent = productosParaPedido.length;
   }
   
-  return totalConIva;
+  return totalPedido;
 }
 
 // Función para cambiar el filtro de inventario desde el select
@@ -126,8 +229,8 @@ function setInventoryPedidoFilter(value) {
   let mensaje = "";
   if (value === "zero") mensaje = "🔴 Mostrando solo productos con inventario = 0";
   else if (value === "atMin") mensaje = "🟡 Mostrando solo productos con inventario en su mínimo (excluye 0)";
-  else if (value === "both") mensaje = "🟠 Mostrando productos con inventario = 0 y en mínimo";
-  else mensaje = "📊 Mostrando todos los productos con pedido";
+  else if (value === "both") mensaje = "🟠 Mostrando todos los productos con inventario menor al máximo";
+  else mensaje = "📊 Mostrando todos los productos con inventario menor al máximo";
   
   mostrarNotificacion(mensaje, false);
 }
@@ -139,69 +242,46 @@ function setInventoryPedidoFilter(value) {
 
 function getProductosParaExportar() {
   if (!state.rows || state.rows.length === 0) return [];
-  
-  // Obtener todos los productos que tienen pedido
-  const productosConPedido = state.rows.filter(r => r.PedidoSugerido > 0);
-  
-  // Separar productos según el filtro seleccionado
-  let productosZero = [];
-  let productosMinimo = [];
-  let otrosProductos = [];
-  
-  productosConPedido.forEach(r => {
-    const inventario = r.Inventario;
-    const estaEnMinimo = isProductoEnMinimo(r);
-    const esManual = r._manual === true;
-    
-    // SI ES MANUAL, SIEMPRE INCLUIR EN PRIMER LUGAR (como zero)
-    if (esManual) {
-      productosZero.push(r);
-      return;
-    }
-    
-    // Verificar qué productos incluir según el filtro
-    if (window.inventoryPedidoFilter.includeZero && !window.inventoryPedidoFilter.includeAtMin) {
-      // Solo inventario = 0
-      if (inventario === 0) {
-        productosZero.push(r);
+
+  // 1. OBTENER TODOS LOS PRODUCTOS QUE LA APP MARCA COMO "PEDIDO"
+  let productosParaExportar = state.rows.filter(r => r.PedidoSugerido > 0);
+
+  // 2. APLICAR EL FILTRO DE INVENTARIO SELECCIONADO (Opcional)
+  if (state.activeFilter === "pedido" && window.inventoryPedidoFilter) {
+    productosParaExportar = productosParaExportar.filter(r => {
+      const inventario = r.Inventario;
+      const estaEnMinimo = isProductoEnMinimo(r);
+
+      if (window.inventoryPedidoFilter.includeZero && !window.inventoryPedidoFilter.includeAtMin) {
+        return inventario === 0;
       }
-    } else if (!window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
-      // Solo inventario en mínimo (excluye 0)
-      if (estaEnMinimo && inventario > 0) {
-        productosMinimo.push(r);
+      if (!window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
+        return estaEnMinimo && inventario > 0;
       }
-    } else if (window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
-      // Inventario = 0 O en mínimo (ambos)
-      if (inventario === 0) {
-        productosZero.push(r);
-      } else if (estaEnMinimo && inventario > 0) {
-        productosMinimo.push(r);
-      }
-    } else {
-      // Todos los productos con pedido (filtro "all")
-      // En este caso, primero los zero, luego los mínimos, luego el resto
-      if (inventario === 0) {
-        productosZero.push(r);
-      } else if (estaEnMinimo) {
-        productosMinimo.push(r);
-      } else {
-        otrosProductos.push(r);
-      }
-    }
-  });
-  
-  // Combinar: PRIMERO los que tienen inventario 0, LUEGO los que están en mínimo
-  // Y dentro de cada grupo, mantener el orden original
-  let resultado = [...productosZero, ...productosMinimo];
-  
-  // Si es el modo "all" (todos), también incluir los que no son zero ni mínimo
-  if (!window.inventoryPedidoFilter.includeZero && !window.inventoryPedidoFilter.includeAtMin) {
-    resultado = [...resultado, ...otrosProductos];
+      return true;
+    });
   }
-  
-  console.log(`📦 Productos a exportar: ${resultado.length} (Zero: ${productosZero.length}, Mínimo: ${productosMinimo.length}${otrosProductos.length > 0 ? `, Otros: ${otrosProductos.length}` : ''})`);
-  
-  return resultado;
+
+  // 3. ORDENAMIENTO: Primero inventario = 0, luego mínimo, luego el resto.
+  productosParaExportar.sort((a, b) => {
+    const aZero = a.Inventario === 0;
+    const bZero = b.Inventario === 0;
+    const aMin = isProductoEnMinimo(a);
+    const bMin = isProductoEnMinimo(b);
+    const aManual = a._manual === true;
+    const bManual = b._manual === true;
+
+    if (aManual && !bManual) return -1;
+    if (!aManual && bManual) return 1;
+    if (aZero && !bZero) return -1;
+    if (!aZero && bZero) return 1;
+    if (aMin && !bMin) return -1;
+    if (!aMin && bMin) return 1;
+    return a.SKU.localeCompare(b.SKU);
+  });
+
+  console.log(`📦 Productos a exportar: ${productosParaExportar.length}`);
+  return productosParaExportar;
 }
 
 function renderTableDynamic(data, filterType) {
@@ -212,6 +292,7 @@ function renderTableDynamic(data, filterType) {
   const activeFilter = String(filterType || "todos").toLowerCase();
 
   let columns = [];
+  const selectionColumn = { key: "__select__", label: "", sortable: false };
   
   if (activeFilter === "pedido" || activeFilter === "pedir") {
     // 🔴 NUEVO ORDEN: Inventario -> Pedido -> Costo unitario -> Costo Total
@@ -221,8 +302,7 @@ function renderTableDynamic(data, filterType) {
       { key: "Inventario", label: "Inventario", sortable: true },
       { key: "PedidoSugerido", label: "Pedido", sortable: true },
       { key: "CostoUnitario", label: "Costo unitario", sortable: true },
-      { key: "CostoTotal", label: "Costo total", sortable: true },
-      { key: "Acciones", label: "", sortable: false }
+      { key: "CostoTotal", label: "Costo total", sortable: true }
     ];
   } else if (activeFilter === "exceso") {
     columns = [
@@ -231,8 +311,7 @@ function renderTableDynamic(data, filterType) {
       { key: "Inventario", label: "Inventario", sortable: true },
       { key: "CostoUnitario", label: "Costo unitario", sortable: true },
       { key: "CostoTotal", label: "Costo total", sortable: true },
-      { key: "Exceso", label: "Exceso", sortable: true },
-      { key: "Acciones", label: "", sortable: false }
+      { key: "Exceso", label: "Exceso", sortable: true }
     ];
   } else if (activeFilter === "ok") {
     columns = [
@@ -241,8 +320,7 @@ function renderTableDynamic(data, filterType) {
       { key: "Inventario", label: "Inventario", sortable: true },
       { key: "CostoUnitario", label: "Costo unitario", sortable: true },
       { key: "CostoTotal", label: "Costo total", sortable: true },
-      { key: "Estado", label: "Estado", sortable: false },
-      { key: "Acciones", label: "", sortable: false }
+      { key: "Estado", label: "Estado", sortable: false }
     ];
   } else if (activeFilter === "zero") {
     columns = [
@@ -253,8 +331,7 @@ function renderTableDynamic(data, filterType) {
       { key: "Minimo", label: "Minimo", sortable: true },
       { key: "Maximo", label: "Maximo", sortable: true },
       { key: "PedidoSugerido", label: "Pedido", sortable: true },
-      { key: "CostoTotal", label: "Costo total", sortable: true },
-      { key: "Acciones", label: "", sortable: false }
+      { key: "CostoTotal", label: "Costo total", sortable: true }
     ];
   } else {
     columns = [
@@ -264,12 +341,17 @@ function renderTableDynamic(data, filterType) {
       { key: "CostoUnitario", label: "Costo unitario", sortable: true },
       { key: "PedidoSugerido", label: "Pedido", sortable: true },
       { key: "CostoTotal", label: "Costo total", sortable: true },
-      { key: "Estado", label: "Estado", sortable: false },
-      { key: "Acciones", label: "", sortable: false }
+      { key: "Estado", label: "Estado", sortable: false }
     ];
   }
 
-  thead.innerHTML = `<tr>${columns.map(col => {
+  const tableColumns = [selectionColumn, ...columns];
+
+  thead.innerHTML = `<tr>${tableColumns.map(col => {
+    if (col.key === "__select__") {
+      return `<th style="width: 44px; text-align: center;"><input type="checkbox" id="selectAllVisibleCheckbox" title="Seleccionar todos los visibles" /></th>`;
+    }
+
     let sortIcon = '';
     if (col.sortable) {
       if (window.sortState.column === col.key) {
@@ -283,8 +365,9 @@ function renderTableDynamic(data, filterType) {
   }).join('')}</tr>`;
 
   if (data.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="${columns.length}" style="text-align:center; padding:40px;">No hay productos que coincidan con el filtro seleccionado</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${tableColumns.length}" style="text-align:center; padding:40px;">No hay productos que coincidan con el filtro seleccionado</td></tr>`;
     document.getElementById("reportPagination")?.remove();
+    updateBulkSelectionToolbar();
     return;
   }
 
@@ -364,19 +447,15 @@ function renderTableDynamic(data, filterType) {
       estadoTexto = r.Estado || "SIN REGLAS";
     }
 
-    const cells = columns.map(col => {
+    const cells = tableColumns.map(col => {
       let value = r[col.key];
       let className = "";
       let displayValue = "";
-      
-      if (col.key === "Acciones") {
-        return `<td style="text-align: center;">
-                  <button type="button" class="btn-delete-row" 
-                    style="background:#dc2626; border:none; cursor:pointer; font-size:0.85em; color:white; padding:4px 10px; border-radius:6px;" 
-                    onclick="confirmDeleteProduct('${escapeHtml(r.SKU)}', '${escapeHtml(r.Producto)}')">
-                    🗑 Eliminar
-                  </button>
-                  </td>`;
+
+      if (col.key === "__select__") {
+        const selectionState = getBulkSelectionState();
+        const isSelected = selectionState.selectedSKUs.includes(r.SKU);
+        return `<td style="text-align: center; width: 44px;"><input type="checkbox" class="table-row-select-checkbox" data-sku="${escapeHtml(r.SKU)}" ${isSelected ? "checked" : ""} /></td>`;
       }
       
       if (col.key === "Inventario") {
@@ -453,6 +532,18 @@ function renderTableDynamic(data, filterType) {
 
   renderReportPagination(totalPages, totalItems);
 
+  const bulkDeleteBtn = document.getElementById("bulkDeleteBtn");
+  if (bulkDeleteBtn && !bulkDeleteBtn.dataset.bound) {
+    bulkDeleteBtn.addEventListener("click", bulkDeleteSelectedProducts);
+    bulkDeleteBtn.dataset.bound = "true";
+  }
+
+  const clearSelectionBtn = document.getElementById("clearBulkSelectionBtn");
+  if (clearSelectionBtn && !clearSelectionBtn.dataset.bound) {
+    clearSelectionBtn.addEventListener("click", clearBulkSelection);
+    clearSelectionBtn.dataset.bound = "true";
+  }
+
   tbody.querySelectorAll('.pedido-sugerido-input').forEach(input => {
     input.removeEventListener('input', handlePedidoSugeridoChange);
     input.addEventListener('input', handlePedidoSugeridoChange);
@@ -465,6 +556,24 @@ function renderTableDynamic(data, filterType) {
       }
     });
   });
+
+  tbody.querySelectorAll('.table-row-select-checkbox').forEach(checkbox => {
+    checkbox.removeEventListener('change', handleRowSelectionChange);
+    checkbox.addEventListener('change', handleRowSelectionChange);
+  });
+
+  const masterCheckbox = document.getElementById("selectAllVisibleCheckbox");
+  if (masterCheckbox) {
+    masterCheckbox.removeEventListener('change', handleSelectAllVisibleChange);
+    masterCheckbox.addEventListener('change', handleSelectAllVisibleChange);
+
+    const visibleCheckboxes = tbody.querySelectorAll('.table-row-select-checkbox');
+    const checkedCount = Array.from(visibleCheckboxes).filter(item => item.checked).length;
+    masterCheckbox.checked = visibleCheckboxes.length > 0 && checkedCount === visibleCheckboxes.length;
+    masterCheckbox.indeterminate = checkedCount > 0 && checkedCount < visibleCheckboxes.length;
+  }
+
+  updateBulkSelectionToolbar();
 }
 
 function renderReportPagination(totalPages, totalItems) {
@@ -646,29 +755,31 @@ function applyFilterAndSearch() {
   console.log("🔍 Aplicando filtro:", currentFilter);
   console.log("📊 Total rows ANTES de filtrar:", filtered.length);
   console.log("📊 Productos con PedidoSugerido > 0:", filtered.filter(r => r.PedidoSugerido > 0).length);
+  try {
+    const withRule = filtered.filter(r => (r.Minimo !== '' && r.Minimo !== undefined) || (r.Maximo !== '' && r.Maximo !== undefined)).length;
+    console.log(`🐞 Debug UI - rows with Min/Max present: ${withRule}`);
+    const sampleRules = filtered.filter(r => (r.Minimo !== '' || r.Maximo !== '')).slice(0,20).map(r => r.SKU).join(', ');
+    if (sampleRules) console.log(`🐞 Debug UI - sample SKUs with Min/Max: ${sampleRules}`);
+  } catch(e) { console.warn('🐞 Debug UI logging failed', e); }
 
   if (currentFilter === "pedido" || currentFilter === "pedir") {
+    // ==================== FILTRO DE PEDIDO (NUEVA LÓGICA) ====================
     filtered = filtered.filter(r => {
       if (r.PedidoSugerido <= 0) return false;
-      
-      if (r._manual === true) return true;
-      
+
       const inventario = r.Inventario;
       const estaEnMinimo = isProductoEnMinimo(r);
-      
+
       if (window.inventoryPedidoFilter.includeZero && !window.inventoryPedidoFilter.includeAtMin) {
         return inventario === 0;
       }
       if (!window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
         return estaEnMinimo && inventario > 0;
       }
-      if (window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
-        return (inventario === 0 || estaEnMinimo);
-      }
       return true;
     });
-    
-    // ORDENAR: PRIMERO LOS DE INVENTARIO = 0, LUEGO LOS DE MÍNIMO
+
+    // 🔴 ORDENAR: PRIMERO los que tienen inventario = 0, LUEGO los que están en mínimo
     filtered.sort((a, b) => {
       const aZero = a.Inventario === 0;
       const bZero = b.Inventario === 0;
@@ -676,30 +787,29 @@ function applyFilterAndSearch() {
       const bMin = isProductoEnMinimo(b);
       const aManual = a._manual === true;
       const bManual = b._manual === true;
-      
+
       if (aManual && !bManual) return -1;
       if (!aManual && bManual) return 1;
-      
+
       if (aZero && !bZero) return -1;
       if (!aZero && bZero) return 1;
-      
+
       if (aMin && !bMin) return -1;
       if (!aMin && bMin) return 1;
-      
+
       return a.SKU.localeCompare(b.SKU);
     });
-    
+
+    // Resetear el ordenamiento para que el orden personalizado prevalezca
     window.sortState.column = null;
     window.sortState.direction = 'desc';
-    
   } else if (currentFilter === "exceso") {
     filtered = filtered.filter(r => {
-      const hasFullRule = (r.Minimo !== "" && r.Minimo !== undefined && r.Minimo !== null) &&
-                          (r.Maximo !== "" && r.Maximo !== undefined && r.Maximo !== null);
-      return hasFullRule && r.Exceso > 0;
+      const hasMaxRule = (r.Maximo !== "" && r.Maximo !== undefined && r.Maximo !== null);
+      return hasMaxRule && r.Exceso > 0;
     });
   } else if (currentFilter === "ok") {
-    filtered = filtered.filter(r => r.PedidoSugerido === 0 && r.Exceso === 0 && r.Estado !== "SIN REGLAS");
+    filtered = filtered.filter(r => r.Estado === "OK");
   } else if (currentFilter === "zero") {
     filtered = filtered.filter(r => r.Inventario === 0);
   }
@@ -737,7 +847,7 @@ function applyFilterAndSearch() {
       } else if (!window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
         tipoFiltro = " (solo stock en mínimo)";
       } else if (window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
-        tipoFiltro = " (stock 0 y en mínimo)";
+        tipoFiltro = " (todos los faltantes al máximo)";
       } else {
         tipoFiltro = " (todos)";
       }

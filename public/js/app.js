@@ -27,7 +27,10 @@ function handleFile(e) {
       state.rawJson = parseSheetWithAutoHeader(sheet);
       
       if (!state.rawJson || state.rawJson.length === 0) {
-        setStatus("No se encontraron filas de datos.", true);
+        const sampleFirstRow = (sheet && sheet['!ref']) ? XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" })[0] : null;
+        const samplePreview = sampleFirstRow ? sampleFirstRow.slice(0,5).join(' | ') : '';
+        setStatus(`No se encontraron filas de datos en la hoja "${sheetName}". Primera fila: ${samplePreview}`, true);
+        console.warn("Depuración: hoja elegida:", sheetName, "primeras celdas:", sampleFirstRow);
         return;
       }
       
@@ -78,12 +81,7 @@ function handleFile(e) {
             applyFilterAndSearch();
           }
           
-          const productosConPedido = state.rows.filter(r => {
-            const hasFullRule = (r.Minimo !== "" && r.Minimo !== undefined && r.Minimo !== null) &&
-                                (r.Maximo !== "" && r.Maximo !== undefined && r.Maximo !== null);
-            const hasPrice = (r.CostoUnitario !== null && r.CostoUnitario !== undefined && r.CostoUnitario > 0);
-            return hasFullRule && hasPrice && r.PedidoSugerido > 0;
-          }).length;
+          const productosConPedido = state.rows.filter(r => r.PedidoSugerido > 0).length;
           
           if (productosConPedido === 0) {
             mostrarNotificacion("📊 No hay productos que requieran pedido.\nVerifica precios y reglas.", true);
@@ -133,7 +131,7 @@ function exportResults() {
     } else if (!window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
       mensaje = "⚠️ No hay productos con inventario en su mínimo que requieran pedido.";
     } else {
-      mensaje = "⚠️ No hay productos que requieran pedido según el filtro seleccionado.";
+      mensaje = "⚠️ No hay productos con inventario menor al máximo.";
     }
     setStatus(mensaje, true);
     return;
@@ -169,39 +167,37 @@ function exportResults() {
     ["B", "C", "D", "E", "F", "G"].forEach(col => delete wsPedido[`${col}${row}`]);
   }
 
-  let subtotalSinIva = 0;
+  let totalPedido = 0;
 
   // Llenar productos
   for (let idx = 0; idx < productsToOrder.length; idx++) {
     const rowNumber = 8 + idx;
     const item = productsToOrder[idx];
     const lookupKey = item.SKU ? item.SKU.toUpperCase() : "";
-    let precioSinIva = state.preciosLookup ? (state.preciosLookup[lookupKey] || 0) : 0;
+    let precioConIva = state.preciosLookup ? (state.preciosLookup[lookupKey] || item.CostoUnitario || 0) : (item.CostoUnitario || 0);
     // Redondear a 2 decimales para evitar 134.4022
-    precioSinIva = Math.round(precioSinIva * 100) / 100;
-    const importeSinIva = Math.round((item.PedidoSugerido * precioSinIva) * 100) / 100;
+    precioConIva = Math.round(precioConIva * 100) / 100;
+    const importeConIva = Math.round((item.PedidoSugerido * precioConIva) * 100) / 100;
     
-    subtotalSinIva += importeSinIva;
+    totalPedido += importeConIva;
     
     wsPedido[`B${rowNumber}`] = { t: "n", v: idx + 1 };
     wsPedido[`C${rowNumber}`] = { t: "s", v: item.SKU || "" };
     wsPedido[`D${rowNumber}`] = { t: "s", v: item.Producto || "" };
     wsPedido[`E${rowNumber}`] = { t: "n", v: item.PedidoSugerido || 0 };
-    wsPedido[`F${rowNumber}`] = { t: "n", v: precioSinIva };
-    wsPedido[`G${rowNumber}`] = { t: "n", v: importeSinIva };
+    wsPedido[`F${rowNumber}`] = { t: "n", v: precioConIva };
+    wsPedido[`G${rowNumber}`] = { t: "n", v: importeConIva };
     
     // Aplicar formato moneda a las celdas de precio y subtotal
     wsPedido[`F${rowNumber}`].z = "$#,##0.00";
     wsPedido[`G${rowNumber}`].z = "$#,##0.00";
   }
   
-  subtotalSinIva = Math.round(subtotalSinIva * 100) / 100;
-  const iva = Math.round(subtotalSinIva * 0.14 * 100) / 100;
-  const totalConIva = Math.round((subtotalSinIva + iva) * 100) / 100;
+  totalPedido = Math.round(totalPedido * 100) / 100;
   
-  wsPedido["G3"] = { t: "n", v: subtotalSinIva, z: "$#,##0.00" };
-  wsPedido["G4"] = { t: "n", v: iva, z: "$#,##0.00" };
-  wsPedido["G5"] = { t: "n", v: totalConIva, z: "$#,##0.00" };
+  wsPedido["G3"] = { t: "n", v: totalPedido, z: "$#,##0.00" };
+  wsPedido["G4"] = { t: "n", v: 0, z: "$#,##0.00" };
+  wsPedido["G5"] = { t: "n", v: totalPedido, z: "$#,##0.00" };
 
   const day = String(today.getDate()).padStart(2, '0');
   const month = String(today.getMonth() + 1).padStart(2, '0');
@@ -213,7 +209,7 @@ function exportResults() {
   // Indicar en el nombre qué filtro se usó
   let filtroTexto = "";
   if (window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
-    filtroTexto = " (stock 0 y en mínimo)";
+    filtroTexto = " (faltantes al maximo)";
   } else if (window.inventoryPedidoFilter.includeZero && !window.inventoryPedidoFilter.includeAtMin) {
     filtroTexto = " (solo stock 0)";
   } else if (!window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
@@ -223,7 +219,7 @@ function exportResults() {
   const nombreArchivo = `${fechaFormateada} - Tecno Bahia - ${sucursal}${filtroTexto}.xlsx`;
   
   console.log("📄 Generando archivo:", nombreArchivo);
-  console.log("💰 Subtotal sin IVA:", subtotalSinIva, "IVA:", iva, "TOTAL CON IVA:", totalConIva);
+  console.log("💰 Total pedido:", totalPedido);
   console.log("📦 Productos incluidos:", productsToOrder.length);
   console.log("🎯 Filtro aplicado - includeZero:", window.inventoryPedidoFilter.includeZero, "includeAtMin:", window.inventoryPedidoFilter.includeAtMin);
   
@@ -231,12 +227,12 @@ function exportResults() {
   
   let filtroDescripcion = "";
   if (window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {
-    filtroDescripcion = "inventario 0 y en mínimo";
+    filtroDescripcion = "inventario menor al máximo";
   } else if (window.inventoryPedidoFilter.includeZero && !window.inventoryPedidoFilter.includeAtMin) {
     filtroDescripcion = "inventario = 0";
   } else {
     filtroDescripcion = "inventario en mínimo";
   }
   
-  setStatus(`📁 Pedido descargado: ${productsToOrder.length} productos (${filtroDescripcion}). Total con IVA: $${totalConIva.toFixed(2)}`, false);
+  setStatus(`📁 Pedido descargado: ${productsToOrder.length} productos (${filtroDescripcion}). Total: $${totalPedido.toFixed(2)}`, false);
 }

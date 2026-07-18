@@ -12,12 +12,12 @@
       window.__resolveFirebaseReady = resolve;
     });
   </script>
-  <script src="js/state.js"></script>
-  <script src="js/utils.js"></script>
-  <script src="js/engine.js"></script>    
-  <script src="js/ui.js"></script>
-  <script src="js/admin.js"></script>
-  <script src="js/app.js"></script> 
+  <script src="js/state.js?v=2"></script>
+  <script src="js/utils.js?v=2"></script>
+  <script src="js/engine.js?v=2"></script>    
+  <script src="js/ui.js?v=3"></script>
+  <script src="js/admin.js?v=2"></script>
+  <script src="js/app.js?v=2"></script> 
 </head>
 <body>
   <div class="corner-menu" aria-label="Menú principal">
@@ -50,7 +50,7 @@
         <h1>Auxiliar de Inventario y Pedidos</h1>
         <p>Sube el Excel de inventario — el sistema calculará el pedido y el exceso de inventario automáticamente.</p>
         <div class="row">
-          <input type="file" id="fileInput" accept=".xlsx,.xls" />
+          <input type="file" id="fileInput" accept=".xlsx,.xls,.xlsm" />
         </div>
         
         <div class="row" style="margin-top: 12px;">
@@ -76,7 +76,7 @@
           <h2 style="margin:0;">📋 Resultados detallados</h2>
           <div class="filter-buttons">
             <div class="filter-chip" data-filter="all">📊 Todos</div>
-            <div class="filter-chip" data-filter="pedido">🛒 En mínimo (pedir)</div>
+            <div class="filter-chip" data-filter="pedido">🛒 Pedido</div>
             <div class="filter-chip" data-filter="exceso">⚠️ En exceso</div>
             <div class="filter-chip" data-filter="ok">✅ OK (dentro rango)</div>
             <div class="filter-chip" data-filter="zero">📭 Sin stock (0)</div>
@@ -87,7 +87,8 @@
           <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
             <span style="font-size: 0.85rem; color: var(--muted);">🎯 Incluir en pedido:</span>
             <select id="inventoryPedidoSelect" style="padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer;">
-              <option value="both">🟠 Inventario = 0 y en mínimo (ambos)</option>
+              <option value="all" selected>📊 Todos los faltantes al máximo</option>
+              <option value="both">🟠 Inventario = 0, en mínimo y faltantes</option>
               <option value="zero">🔴 Solo inventario = 0</option>
               <option value="atMin">🟡 Solo inventario en mínimo</option>
             </select>
@@ -124,6 +125,12 @@
           </div>
         </div>
         
+        <div id="bulkSelectionToolbar" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+          <button id="bulkDeleteBtn" type="button" class="btn-secondary" style="background:#dc2626; color:white;" disabled>🗑 Eliminar seleccionados</button>
+          <button id="clearBulkSelectionBtn" type="button" class="btn-secondary" style="display:none;">❌ Limpiar selección</button>
+          <span id="bulkSelectionInfo" style="font-size:0.85rem; color:var(--muted);">Ninguno seleccionado</span>
+        </div>
+
         <div style="overflow:auto;">
           <table id="resultTable">
             <thead id="tableHeader"></thead>
@@ -205,8 +212,8 @@
         </div>
         <div class="hint">
           💰 <strong>Archivo de precios</strong>: Sube el archivo de Sherwin Williams (precios.xlsm o similar).<br>
-          ✅ El sistema detecta automáticamente: <strong>CODIGOS</strong>, <strong>DESCRIPCION</strong> y <strong>PAD SIN IVA</strong>.<br>
-          📊 Se aplicará el +14% de IVA para registrar el costo de adquisición real.
+          ✅ El sistema detecta automáticamente: <strong>CODIGOS</strong>, <strong>DESCRIPCION</strong> y <strong>PAD CON IVA</strong>.<br>
+          📊 Si el archivo solo trae PAD sin IVA, se convertirá automáticamente a PAD con IVA.
         </div>
 
         <!-- ============================================================ -->

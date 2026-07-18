@@ -156,10 +156,10 @@ function updatePreciosStatusDisplay(count) {
         minute: '2-digit',
         second: '2-digit'
       });
-      preciosInfo.innerHTML = `<strong>${escapeHtml(preciosFileName)}</strong><br>📅 ${fechaFormateada}<br>📊 ${count} productos cargados (Precios SIN IVA)`;
+      preciosInfo.innerHTML = `<strong>${escapeHtml(preciosFileName)}</strong><br>📅 ${fechaFormateada}<br>📊 ${count} productos cargados (PAD con IVA)`;
       preciosInfo.style.color = "var(--ok)";
     } else if (count > 0) {
-      preciosInfo.innerHTML = `<strong>Precios cargados</strong><br>📊 ${count} productos cargados (SIN IVA)`;
+      preciosInfo.innerHTML = `<strong>Precios cargados</strong><br>📊 ${count} productos cargados (PAD con IVA)`;
       preciosInfo.style.color = "var(--ok)";
     } else {
       preciosInfo.innerHTML = "No hay precios cargados";
@@ -304,16 +304,14 @@ async function logoutAdmin() {
 }
 
 // ============================================================
-// SECCIÓN 3: REGLAS DE STOCK (KOLO) - VERSIÓN CORREGIDA
+// SECCIÓN 3: REGLAS DE STOCK (KOLO) - VERSIÓN OPTIMIZADA
 // ============================================================
 
 async function loadRules() {
   try {
-    // 🔴 CORREGIDO: Cargar desde Firestore primero
     const data = await firestoreGetDocData("adminRules");
     const rulesWithValues = data.adminRules || {};
     
-    // Cargar SKUs sin reglas desde localStorage (solo como fallback)
     let skusSinReglas = {};
     const savedSinReglas = localStorage.getItem('tecnobahia_skus_sin_reglas');
     if (savedSinReglas) {
@@ -325,19 +323,11 @@ async function loadRules() {
       }
     }
     
-    // 🔴 Firestore tiene PRIORIDAD sobre localStorage
-    state.adminRules = { ...rulesWithValues };
-    
-    // Agregar SKUs sin reglas que NO estén en Firestore
-    for (const sku in skusSinReglas) {
-      if (!state.adminRules[sku]) {
-        state.adminRules[sku] = skusSinReglas[sku];
-      }
-    }
+    state.adminRules = { ...skusSinReglas, ...rulesWithValues };
     
     console.log("📋 Reglas KOLO cargadas:", Object.keys(state.adminRules).length);
-    console.log(`   - Con reglas (Firestore): ${Object.keys(rulesWithValues).length}`);
-    console.log(`   - Sin reglas (localStorage): ${Object.keys(skusSinReglas).length}`);
+    console.log(`   - Con reglas: ${Object.keys(rulesWithValues).length}`);
+    console.log(`   - Sin reglas: ${Object.keys(skusSinReglas).length}`);
     
     const metadata = await firestoreGetDocData("reglasMetadata");
     if (metadata && metadata.lastUpdate) {
@@ -353,10 +343,6 @@ async function loadRules() {
     if (typeof applyAdminFilter === "function") {
       applyAdminFilter();
     }
-    
-    // 🔴 Sincronizar localStorage con Firestore después de cargar
-    await persistRules();
-    
   } catch (e) {
     console.error("Error cargando reglas:", e);
     state.adminRules = {};
@@ -364,55 +350,36 @@ async function loadRules() {
 }
 
 async function persistRules() {
-  // 🔴 CORREGIDO: Separar reglas con valores de las que no tienen
   const rulesWithValues = {};
-  const skusSinReglas = {};
-  
   for (const sku in state.adminRules) {
     const rule = state.adminRules[sku];
-    const hasMin = (rule.minimo !== "" && rule.minimo !== null && rule.minimo !== undefined);
-    const hasMax = (rule.maximo !== "" && rule.maximo !== null && rule.maximo !== undefined);
-    const isConfirmed = rule.confirmado === true;
-    
-    if (hasMin || hasMax || isConfirmed) {
-      // Guardar en Firestore si tiene reglas o está confirmado
-      rulesWithValues[sku] = {
-        minimo: hasMin ? rule.minimo : "",
-        maximo: hasMax ? rule.maximo : "",
-        producto: rule.producto || sku,
-        confirmado: isConfirmed
-      };
-    } else {
-      // Guardar en localStorage si NO tiene reglas
-      skusSinReglas[sku] = {
-        minimo: "",
-        maximo: "",
-        producto: rule.producto || sku,
-        confirmado: false
-      };
+    if ((rule.minimo !== "" && rule.minimo !== null && rule.minimo !== undefined) || 
+        (rule.maximo !== "" && rule.maximo !== null && rule.maximo !== undefined) ||
+        rule.confirmado === true) {
+      rulesWithValues[sku] = rule;
     }
   }
   
   console.log(`💾 Guardando ${Object.keys(rulesWithValues).length} SKUs en Firestore`);
-  console.log(`💾 Guardando ${Object.keys(skusSinReglas).length} SKUs en localStorage`);
+  console.log(`💾 Total SKUs en memoria: ${Object.keys(state.adminRules).length}`);
   
   try {
-    // Guardar en Firestore
     await firestoreSetDocData("adminRules", { adminRules: rulesWithValues });
     console.log("✅ Reglas guardadas en Firestore");
-    
-    // Guardar metadata
-    await firestoreSetDocData("reglasMetadata", {
-      lastUpdate: new Date().toISOString(),
-      fileName: reglasFileName || "Reglas KOLO",
-      totalCount: Object.keys(state.adminRules).length
-    }).catch(e => console.warn("No se pudo guardar metadata de reglas"));
-    
   } catch (err) {
     console.error("❌ Error guardando en Firestore:", err);
   }
   
-  // Guardar SKUs sin reglas en localStorage
+  const skusSinReglas = {};
+  for (const sku in state.adminRules) {
+    const rule = state.adminRules[sku];
+    if ((rule.minimo === "" || rule.minimo === null || rule.minimo === undefined) && 
+        (rule.maximo === "" || rule.maximo === null || rule.maximo === undefined) &&
+        rule.confirmado !== true) {
+      skusSinReglas[sku] = rule;
+    }
+  }
+  
   if (Object.keys(skusSinReglas).length > 0) {
     localStorage.setItem('tecnobahia_skus_sin_reglas', JSON.stringify(skusSinReglas));
     console.log(`💾 ${Object.keys(skusSinReglas).length} SKUs sin reglas guardados en localStorage`);
@@ -547,17 +514,21 @@ function saveRulesFromInputs() {
   reglasFileName = "Reglas KOLO editadas manualmente";
   updateReglasStatusDisplay();
   
+  firestoreSetDocData("reglasMetadata", {
+    lastUpdate: reglasLastUpdate.toISOString(),
+    fileName: "Reglas KOLO editadas manualmente",
+    totalCount: Object.keys(state.adminRules).length
+  }).catch(e => console.warn("No se pudo guardar metadata de reglas"));
+  
   setStatus("✅ Reglas guardadas correctamente", false);
 }
 
 function clearAllRules() {
   if (!state.adminUnlocked) return;
   if (confirm("⚠️ ¿Eliminar SOLO las reglas de mínimos y máximos?\n\nLos SKUs seguirán apareciendo, solo se eliminarán los valores de mínimo y máximo.")) {
-    // 🔴 CORREGIDO: No eliminar los SKUs, solo los valores de min y max
     for (const sku in state.adminRules) {
       state.adminRules[sku].minimo = "";
       state.adminRules[sku].maximo = "";
-      // Mantener el nombre y confirmado
     }
     persistRules();
     recalculateRows();
@@ -659,6 +630,12 @@ function addNewSku() {
   reglasFileName = "SKU agregado manualmente";
   updateReglasStatusDisplay();
   
+  firestoreSetDocData("reglasMetadata", {
+    lastUpdate: reglasLastUpdate.toISOString(),
+    fileName: "SKU agregado manualmente",
+    totalCount: Object.keys(state.adminRules).length
+  }).catch(e => console.warn("No se pudo guardar metadata de reglas"));
+  
   if (!state.listaCompleta.some(item => item.CODIGO === skuTrim)) {
     state.listaCompleta.push({
       CODIGO: skuTrim,
@@ -710,6 +687,7 @@ function importRulesExcel() {
       
       console.log("📋 Archivo cargado. Total filas:", rows.length);
       
+      // DETECCIÓN AUTOMÁTICA DE COLUMNAS
       const headerRow = rows[0] || [];
       console.log("📋 Encabezados encontrados:", headerRow);
       
@@ -858,6 +836,12 @@ function importRulesExcel() {
       
       reglasLastUpdate = new Date();
       reglasFileName = file.name;
+      
+      await firestoreSetDocData("reglasMetadata", {
+        lastUpdate: reglasLastUpdate.toISOString(),
+        fileName: file.name,
+        totalCount: Object.keys(state.adminRules).length
+      }).catch(e => console.warn("No se pudo guardar metadata de reglas"));
       
       fileInput.value = "";
       
@@ -1022,16 +1006,18 @@ async function importListaCompleta() {
       
       let codigoCol = null;
       let descCol = null;
-      let precioColPAD = null;
+      let precioColPADConIva = null;
+      let precioColPADSinIva = null;
       
       headerRow.forEach((header, idx) => {
         const hNorm = norm(header);
         if (hNorm.includes("codigo")) codigoCol = idx;
         if (hNorm.includes("descripcion") || hNorm.includes("producto")) descCol = idx;
-        if (hNorm.includes("pad") && hNorm.includes("sin")) precioColPAD = idx;
+        if (hNorm.includes("pad") && hNorm.includes("con") && hNorm.includes("iva")) precioColPADConIva = idx;
+        if (hNorm.includes("pad") && hNorm.includes("sin") && hNorm.includes("iva")) precioColPADSinIva = idx;
       });
       
-      if (codigoCol === null || precioColPAD === null) {
+      if (codigoCol === null || (precioColPADConIva === null && precioColPADSinIva === null)) {
         setStatus("❌ No se encontraron las columnas necesarias", true);
         fileInput.value = "";
         return;
@@ -1049,10 +1035,12 @@ async function importListaCompleta() {
         const codigo = String(rowArr[codigoCol] || "").trim().toUpperCase();
         const descripcion = descCol !== null ? String(rowArr[descCol] || "").trim() : "";
         
-        let precioSinIva = toNum(rowArr[precioColPAD]);
+        let precioConIva = precioColPADConIva !== null
+          ? toNum(rowArr[precioColPADConIva])
+          : Math.round(toNum(rowArr[precioColPADSinIva]) * 1.14 * 100) / 100;
         
-        if (precioSinIva > 1000) {
-          errores.push(`${codigo}: ${precioSinIva} - posible IVA incluido`);
+        if (precioConIva > 1140) {
+          errores.push(`${codigo}: ${precioConIva} - precio alto`);
         }
         
         if (!codigo) continue;
@@ -1060,11 +1048,11 @@ async function importListaCompleta() {
         const item = {
           CODIGO: codigo,
           DESCRIPCION: descripcion,
-          PRECIO_SIN_IVA: precioSinIva
+          PRECIO_CON_IVA: precioConIva
         };
         
         state.listaCompleta.push(item);
-        state.preciosLookup[codigo] = precioSinIva;
+        state.preciosLookup[codigo] = precioConIva;
         processedCount++;
       }
       
@@ -1086,9 +1074,9 @@ async function importListaCompleta() {
       
       fileInput.value = "";
       
-      let mensaje = `✅ ${processedCount} precios cargados exitosamente (PAD sin IVA).`;
+      let mensaje = `✅ ${processedCount} precios cargados exitosamente (PAD con IVA).`;
       if (errores.length > 0) {
-        mensaje += ` ⚠️ Se detectaron ${errores.length} precios altos. Verifica que el archivo contenga PAD sin IVA.`;
+        mensaje += ` ⚠️ Se detectaron ${errores.length} precios altos. Verifica el listado de precios.`;
       }
       setStatus(mensaje, false);
       updatePreciosStatusDisplay(processedCount);
@@ -1774,8 +1762,7 @@ async function clearAllItems() {
     state.listaCompleta = [];
     state.preciosLookup = {};
     
-    // 🔴 CORREGIDO: Limpiar Firestore también
-    await firestoreSetDocData("adminRules", { adminRules: {} });
+    await persistRules();
     
     await firestoreSetDocData("reglasMetadata", {
       lastUpdate: new Date().toISOString(),
