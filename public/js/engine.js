@@ -109,6 +109,29 @@ function parseSheetWithAutoHeader(sheet) {
 function recalculateRows() {
   console.log("🔄 Recalculando filas...");
 
+  if (!state.inventoryLoaded) {
+    console.log("⏭️ Recalculo omitido: aún no se cargó un archivo de inventario.");
+    state.rows = [];
+    state.filtered = [];
+    state.activeFilter = "all";
+
+    const chips = document.querySelectorAll(".filter-chip");
+    chips.forEach(chip => {
+      chip.classList.toggle("active", chip.getAttribute("data-filter") === "all");
+    });
+
+    if (typeof applyFilterAndSearch === "function") {
+      applyFilterAndSearch();
+    }
+    if (typeof updateMetrics === "function") {
+      updateMetrics([]);
+    }
+    if (typeof updateExportButtonState === "function") {
+      updateExportButtonState();
+    }
+    return;
+  }
+
   // GUARDAR PRODUCTOS MANUALES ANTES DE RECALCULAR
   const manualProducts = (state.rows || []).filter(r => r._manual === true);
   console.log("📦 Productos manuales a preservar:", manualProducts.length);

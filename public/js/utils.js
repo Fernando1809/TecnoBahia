@@ -67,6 +67,17 @@ function setStatus(msg, isError = false) {
   else if (isError) mostrarNotificacion(msg, true);
 }
 
+/**
+ * Convierte el nombre de una sucursal (Jiquilisco / Usulután) en un slug
+ * seguro para usarlo como parte de un ID de documento en Firestore.
+ */
+function slugSucursal(nombre) {
+  const n = norm(nombre || "");
+  if (n.includes("jiquilisco")) return "jiquilisco";
+  if (n.includes("usulutan")) return "usulutan";
+  return "general";
+}
+
 function chooseMainSheet(workbook) {
   // Prefer sheet names that likely contain the inventory/lista
   const candidates = ["inventario", "stock", "lista", "lista_completa", "lista completa", "existencia", "disponible", "saldo"];

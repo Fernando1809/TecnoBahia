@@ -6,6 +6,13 @@ const state = {
   rawJson: [],
   columnMap: null,
   adminRules: {},
+  // Reglas de mínimos/máximos separadas por sucursal (Jiquilisco / Usulután)
+  adminRulesPorSucursal: { "Jiquilisco": {}, "Usulután": {} },
+  sucursalActiva: null,
+  // Metadata (fecha/nombre de archivo) del último import de reglas, por sucursal
+  reglasMeta: { "Jiquilisco": {}, "Usulután": {} },
+  // Memoria del último pedido generado, por sucursal (solo identificadores/SKUs)
+  pedidoMemoriaPorSucursal: { "Jiquilisco": null, "Usulután": null },
   adminUnlocked: false,
   userRole: null,
   activeFilter: "all",
@@ -18,6 +25,7 @@ const state = {
   pedidoTemplateLoaded: false,
   pedidoTemplateName: null,
   inventoryOrigin: null,
+  inventoryLoaded: false,
   currentView: "report",
   darkMode: false,
   bulkSelection: {

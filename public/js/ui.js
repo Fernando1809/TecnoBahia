@@ -430,6 +430,9 @@ function renderTableDynamic(data, filterType) {
   tbody.innerHTML = paginatedData.map(r => {
     let estadoClass = "";
     let estadoTexto = "";
+    const sucursal = state.inventoryOrigin || state.sucursalActiva || "Jiquilisco";
+    const pedidoAnteriorSet = typeof getPedidoAnteriorSet === "function" ? getPedidoAnteriorSet(sucursal) : new Set();
+    const fueEnPedidoAnterior = pedidoAnteriorSet.has(String(r.SKU || "").trim().toUpperCase());
     
     if (r.PedidoSugerido > 0) {
       estadoClass = "tag-danger";
@@ -476,6 +479,20 @@ function renderTableDynamic(data, filterType) {
         
         if (hasMinMax) {
           displayValue += ` <span class="info-icon" onclick="event.stopPropagation(); showMinMaxInfo('${escapeHtml(r.SKU)}')" title="Ver Minimo y Maximo">i</span>`;
+        }
+      }
+      else if (col.key === "Producto") {
+        let baseValue = "";
+        if (value === "" || value === undefined || value === null) {
+          baseValue = "-";
+        } else {
+          baseValue = escapeHtml(String(value));
+        }
+
+        if (fueEnPedidoAnterior) {
+          displayValue = `${baseValue} <span style="margin-left:6px; color:var(--warning); font-size:11px; font-weight:bold;">↩️ anterior</span>`;
+        } else {
+          displayValue = baseValue;
         }
       }
       else if (col.key === "PedidoSugerido" && r.PedidoSugerido > 0) {
@@ -1090,25 +1107,28 @@ function addProductToPedido() {
   const existingRow = state.rows.find(r => r.SKU === sku);
   
   if (existingRow) {
-    // ACTUALIZAR existente - FORZAR inventario a 0 y pedido a cantidad
+    const inventarioReal = existingRow.Inventario !== undefined && existingRow.Inventario !== null && existingRow.Inventario !== ""
+      ? Number(existingRow.Inventario)
+      : 0;
+
     existingRow.PedidoSugerido = cantidad;
     existingRow.CostoTotal = precio * cantidad;
     existingRow.Estado = "PEDIR";
     existingRow.CostoUnitario = precio;
-    existingRow.Inventario = 0; // FORZAR INVENTARIO A 0
-    existingRow.Minimo = state.adminRules[sku]?.minimo ?? 0;
-    existingRow.Maximo = state.adminRules[sku]?.maximo ?? cantidad;
+    existingRow.Inventario = inventarioReal;
+    existingRow.Minimo = state.adminRules[sku]?.minimo ?? existingRow.Minimo ?? 0;
+    existingRow.Maximo = state.adminRules[sku]?.maximo ?? existingRow.Maximo ?? cantidad;
     if (!existingRow.Producto || existingRow.Producto === "Sin nombre") {
       existingRow.Producto = producto;
     }
-    existingRow._manual = true; // Marcar como agregado manualmente
-    console.log("✏️ Producto actualizado (FORZADO inventario 0):", existingRow);
+    existingRow._manual = true;
+    console.log("✏️ Producto actualizado conservando inventario real:", existingRow);
   } else {
-    // AGREGAR NUEVO - FORZAR inventario a 0
+    // AGREGAR NUEVO - iniciar sin inventario real conocido
     const newRow = {
       SKU: sku,
       Producto: producto,
-      Inventario: 0, // FORZAR INVENTARIO A 0
+      Inventario: 0,
       CostoUnitario: precio,
       Minimo: state.adminRules[sku]?.minimo ?? 0,
       Maximo: state.adminRules[sku]?.maximo ?? cantidad,
@@ -1413,6 +1433,14 @@ function renderAdminPagination(currentPage, totalPages, totalItems) {
 // ============================================================
 
 function autoSwitchToPedidoFilter() {
+  if (!state.inventoryLoaded) {
+    console.log("⏭️ Se omite el cambio automático a PEDIDO porque aún no se cargó un archivo de inventario.");
+    if (typeof applyFilterAndSearch === "function") {
+      applyFilterAndSearch();
+    }
+    return;
+  }
+
   if (!state.rows || state.rows.length === 0) {
     mostrarNotificacion("⚠️ Carga primero un archivo de inventario", true);
     return;

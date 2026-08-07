@@ -35,6 +35,16 @@ function handleFile(e) {
       }
       
       state.inventoryOrigin = detectInventoryOrigin(workbook, file.name);
+      state.inventoryLoaded = true;
+
+      // ✅ Detectar la sucursal (Jiquilisco/Usulután) y activar su archivo de reglas min/max
+      if (state.inventoryOrigin && typeof activarSucursal === "function") {
+        activarSucursal(state.inventoryOrigin);
+        console.log(`🏬 Reglas min/máx activadas automáticamente para: ${state.inventoryOrigin}`);
+      } else if (!state.inventoryOrigin) {
+        console.warn("⚠️ No se detectó la sucursal del inventario; se mantienen las reglas actualmente activas:", state.sucursalActiva);
+        mostrarNotificacion(`⚠️ No se detectó la sucursal del archivo. Usando reglas de: ${state.sucursalActiva || "N/D"}`, true);
+      }
       
       // ✅ IMPORTANTE: Recalcular las filas después de cargar el inventario
       recalculateRows();
@@ -137,6 +147,11 @@ function exportResults() {
     return;
   }
   
+  const sucursalPedido = state.inventoryOrigin || state.sucursalActiva || "General";
+  if (typeof mostrarMemoriaPedidoAnterior === "function") {
+    mostrarMemoriaPedidoAnterior(sucursalPedido);
+  }
+
   const wb = getPedidoWorkbook(); 
   if (!wb) {
     setStatus("No se pudo leer la plantilla PEDIDO.", true);
@@ -224,6 +239,14 @@ function exportResults() {
   console.log("🎯 Filtro aplicado - includeZero:", window.inventoryPedidoFilter.includeZero, "includeAtMin:", window.inventoryPedidoFilter.includeAtMin);
   
   XLSX.writeFile(wb, nombreArchivo, { bookType: "xlsx", cellDates: true });
+
+  if (typeof guardarMemoriaPedidoActual === "function") {
+    guardarMemoriaPedidoActual(sucursalPedido, productsToOrder);
+  }
+
+  if (typeof loadPedidoMemoria === "function") {
+    loadPedidoMemoria().catch(err => console.warn("No se pudo refrescar el historial de pedidos:", err));
+  }
   
   let filtroDescripcion = "";
   if (window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {

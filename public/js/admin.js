@@ -169,6 +169,9 @@ function updatePreciosStatusDisplay(count) {
 }
 
 function updateReglasStatusDisplay() {
+  const sucursalLabel = document.getElementById("sucursalActivaLabel");
+  if (sucursalLabel) sucursalLabel.textContent = state.sucursalActiva || "Jiquilisco";
+
   const reglasInfo = document.getElementById("reglasInfo");
   if (reglasInfo) {
     const reglasCountTotal = Object.keys(state.adminRules).length;
@@ -307,49 +310,117 @@ async function logoutAdmin() {
 // SECCIÓN 3: REGLAS DE STOCK (KOLO) - VERSIÓN OPTIMIZADA
 // ============================================================
 
+const SUCURSALES = ["Jiquilisco", "Usulután"];
+
+/**
+ * Carga desde Firestore las reglas de mínimos/máximos de AMBAS sucursales
+ * (cada una vive en su propio documento: adminRules_jiquilisco / adminRules_usulutan)
+ * y activa la sucursal correspondiente en state.adminRules.
+ */
 async function loadRules() {
   try {
-    const data = await firestoreGetDocData("adminRules");
-    const rulesWithValues = data.adminRules || {};
-    
-    let skusSinReglas = {};
-    const savedSinReglas = localStorage.getItem('tecnobahia_skus_sin_reglas');
-    if (savedSinReglas) {
-      try {
-        skusSinReglas = JSON.parse(savedSinReglas);
-        console.log(`📦 Cargados ${Object.keys(skusSinReglas).length} SKUs sin reglas desde localStorage`);
-      } catch(e) {
-        console.warn("Error cargando SKUs sin reglas:", e);
+    state.adminRulesPorSucursal = state.adminRulesPorSucursal || {};
+    state.reglasMeta = state.reglasMeta || {};
+
+    for (const sucursal of SUCURSALES) {
+      const slug = slugSucursal(sucursal);
+      const data = await firestoreGetDocData(`adminRules_${slug}`);
+      state.adminRulesPorSucursal[sucursal] = data.adminRules || {};
+
+      const metadata = await firestoreGetDocData(`reglasMetadata_${slug}`);
+      state.reglasMeta[sucursal] = metadata && metadata.lastUpdate ? metadata : null;
+
+      console.log(`📋 Reglas KOLO cargadas (${sucursal}):`, Object.keys(state.adminRulesPorSucursal[sucursal]).length);
+    }
+
+    // Migración: si hay reglas antiguas (una sola bolsa, sin separar por sucursal) y las
+    // nuevas todavía están vacías, las movemos a Jiquilisco por defecto para no perder datos.
+    const totalNuevas = SUCURSALES.reduce((acc, s) => acc + Object.keys(state.adminRulesPorSucursal[s] || {}).length, 0);
+    if (totalNuevas === 0) {
+      const legacyData = await firestoreGetDocData("adminRules");
+      if (legacyData && legacyData.adminRules && Object.keys(legacyData.adminRules).length > 0) {
+        console.warn("⚠️ Migrando reglas antiguas (sin sucursal) a Jiquilisco por defecto");
+        state.adminRulesPorSucursal["Jiquilisco"] = legacyData.adminRules;
       }
     }
-    
-    state.adminRules = { ...skusSinReglas, ...rulesWithValues };
-    
-    console.log("📋 Reglas KOLO cargadas:", Object.keys(state.adminRules).length);
-    console.log(`   - Con reglas: ${Object.keys(rulesWithValues).length}`);
-    console.log(`   - Sin reglas: ${Object.keys(skusSinReglas).length}`);
-    
-    const metadata = await firestoreGetDocData("reglasMetadata");
-    if (metadata && metadata.lastUpdate) {
-      reglasLastUpdate = new Date(metadata.lastUpdate);
-      reglasFileName = metadata.fileName || "Reglas KOLO cargadas";
-    } else if (Object.keys(state.adminRules).length > 0) {
-      reglasLastUpdate = new Date();
-      reglasFileName = "Reglas KOLO existentes";
-    }
-    
-    updateReglasStatusDisplay();
-    
+
+    activarSucursal(state.sucursalActiva || "Jiquilisco");
+
     if (typeof applyAdminFilter === "function") {
       applyAdminFilter();
     }
   } catch (e) {
     console.error("Error cargando reglas:", e);
+    state.adminRulesPorSucursal = { "Jiquilisco": {}, "Usulután": {} };
     state.adminRules = {};
   }
 }
 
+/**
+ * Hace que `state.adminRules` apunte (por referencia) al set de reglas de la
+ * sucursal indicada, y sincroniza los indicadores visuales (selector, hint de estado).
+ */
+function activarSucursal(nombre) {
+  if (!nombre) return;
+  if (!state.adminRulesPorSucursal) state.adminRulesPorSucursal = {};
+  if (!state.adminRulesPorSucursal[nombre]) state.adminRulesPorSucursal[nombre] = {};
+
+  state.sucursalActiva = nombre;
+  state.adminRules = state.adminRulesPorSucursal[nombre];
+
+  const meta = (state.reglasMeta && state.reglasMeta[nombre]) || null;
+  reglasLastUpdate = meta && meta.lastUpdate ? new Date(meta.lastUpdate) : null;
+  reglasFileName = meta && meta.fileName ? meta.fileName : (Object.keys(state.adminRules).length > 0 ? "Reglas KOLO existentes" : null);
+
+  console.log(`🏬 Sucursal activa: ${nombre} (${Object.keys(state.adminRules).length} reglas)`);
+
+  updateReglasStatusDisplay();
+  updateSucursalSelectorUI();
+  updateSucursalUploadUI();
+}
+
+/**
+ * Sincroniza el <select> de sucursal (panel admin) con state.sucursalActiva,
+ * si el elemento existe en el DOM.
+ */
+function updateSucursalSelectorUI() {
+  const select = document.getElementById("sucursalSelector");
+  if (select && state.sucursalActiva) {
+    select.value = state.sucursalActiva;
+  }
+}
+
+/**
+ * Muestra solo el bloque de carga de archivos correspondiente a la sucursal activa.
+ */
+function updateSucursalUploadUI() {
+  const sucursal = state.sucursalActiva || "Jiquilisco";
+  const jiquiliscoRow = document.getElementById("uploadJiquiliscoRow");
+  const usulutanRow = document.getElementById("uploadUsulutanRow");
+
+  if (jiquiliscoRow) {
+    jiquiliscoRow.style.display = sucursal === "Jiquilisco" ? "flex" : "none";
+  }
+
+  if (usulutanRow) {
+    usulutanRow.style.display = sucursal === "Usulután" ? "flex" : "none";
+  }
+}
+
+/**
+ * Llamado desde el <select> de sucursal en el panel admin: cambia qué
+ * conjunto de reglas se está editando/visualizando.
+ */
+function onSucursalSelectorChange(nombre) {
+  activarSucursal(nombre);
+  if (typeof applyAdminFilter === "function") applyAdminFilter();
+  setStatus(`📋 Mostrando reglas de: ${nombre}`, false);
+}
+
 async function persistRules() {
+  const sucursal = state.sucursalActiva || "Jiquilisco";
+  const slug = slugSucursal(sucursal);
+
   const rulesWithValues = {};
   for (const sku in state.adminRules) {
     const rule = state.adminRules[sku];
@@ -360,31 +431,86 @@ async function persistRules() {
     }
   }
   
-  console.log(`💾 Guardando ${Object.keys(rulesWithValues).length} SKUs en Firestore`);
+  console.log(`💾 Guardando ${Object.keys(rulesWithValues).length} SKUs en Firestore (sucursal: ${sucursal})`);
   console.log(`💾 Total SKUs en memoria: ${Object.keys(state.adminRules).length}`);
   
   try {
-    await firestoreSetDocData("adminRules", { adminRules: rulesWithValues });
-    console.log("✅ Reglas guardadas en Firestore");
+    await firestoreSetDocData(`adminRules_${slug}`, { adminRules: rulesWithValues });
+    state.adminRulesPorSucursal[sucursal] = state.adminRules;
+    console.log(`✅ Reglas guardadas en Firestore (${sucursal})`);
   } catch (err) {
     console.error("❌ Error guardando en Firestore:", err);
   }
-  
-  const skusSinReglas = {};
-  for (const sku in state.adminRules) {
-    const rule = state.adminRules[sku];
-    if ((rule.minimo === "" || rule.minimo === null || rule.minimo === undefined) && 
-        (rule.maximo === "" || rule.maximo === null || rule.maximo === undefined) &&
-        rule.confirmado !== true) {
-      skusSinReglas[sku] = rule;
-    }
+}
+
+// ============================================================
+// MEMORIA DE PEDIDOS (por sucursal) - Firestore
+// ============================================================
+
+/**
+ * Carga desde Firestore la memoria del último pedido generado para cada
+ * sucursal (solo identificadores de SKU, no el detalle completo).
+ */
+async function loadPedidoMemoria() {
+  state.pedidoMemoriaPorSucursal = state.pedidoMemoriaPorSucursal || {};
+  for (const sucursal of SUCURSALES) {
+    const slug = slugSucursal(sucursal);
+    const data = await firestoreGetDocData(`pedidoMemoria_${slug}`);
+    state.pedidoMemoriaPorSucursal[sucursal] = (data && data.skus && data.skus.length) ? data : null;
   }
-  
-  if (Object.keys(skusSinReglas).length > 0) {
-    localStorage.setItem('tecnobahia_skus_sin_reglas', JSON.stringify(skusSinReglas));
-    console.log(`💾 ${Object.keys(skusSinReglas).length} SKUs sin reglas guardados en localStorage`);
-  } else {
-    localStorage.removeItem('tecnobahia_skus_sin_reglas');
+  console.log("🕘 Memoria de pedidos cargada:", state.pedidoMemoriaPorSucursal);
+}
+
+function getPedidoAnteriorSet(sucursal) {
+  const memoria = state.pedidoMemoriaPorSucursal && state.pedidoMemoriaPorSucursal[sucursal];
+  if (!memoria || !Array.isArray(memoria.skus)) return new Set();
+
+  const normalized = new Set();
+  memoria.skus.forEach(sku => {
+    if (sku) normalized.add(String(sku).trim().toUpperCase());
+  });
+  return normalized;
+}
+
+/**
+ * Muestra (vía notificación) qué SKUs se pidieron la última vez para esta
+ * sucursal, si existe memoria previa. No bloquea la generación del pedido actual.
+ */
+function mostrarMemoriaPedidoAnterior(sucursal) {
+  const memoria = state.pedidoMemoriaPorSucursal ? state.pedidoMemoriaPorSucursal[sucursal] : null;
+  if (!memoria || !memoria.skus || !memoria.skus.length) {
+    console.log(`🕘 No hay memoria de pedido anterior para ${sucursal}`);
+    return;
+  }
+
+  const fecha = memoria.fecha ? new Date(memoria.fecha).toLocaleDateString('es-ES') : "fecha desconocida";
+  const preview = memoria.skus.slice(0, 15).join(", ");
+  const resto = memoria.skus.length > 15 ? ` y ${memoria.skus.length - 15} más` : "";
+
+  console.log(`🕘 Pedido anterior (${sucursal}, ${fecha}) - ${memoria.skus.length} SKUs:`, memoria.skus);
+  mostrarNotificacion(`🕘 Pedido anterior de ${sucursal} (${fecha}): ${memoria.skus.length} productos → ${preview}${resto}`, false);
+}
+
+/**
+ * Guarda en memoria (state + Firestore) los SKUs del pedido recién generado
+ * para esta sucursal, reemplazando la memoria anterior.
+ */
+async function guardarMemoriaPedidoActual(sucursal, productsToOrder) {
+  const skus = (productsToOrder || []).map(p => p.SKU).filter(Boolean);
+  const memoria = {
+    fecha: new Date().toISOString(),
+    skus: skus,
+    totalItems: skus.length
+  };
+
+  if (!state.pedidoMemoriaPorSucursal) state.pedidoMemoriaPorSucursal = {};
+  state.pedidoMemoriaPorSucursal[sucursal] = memoria;
+
+  try {
+    await firestoreSetDocData(`pedidoMemoria_${slugSucursal(sucursal)}`, memoria);
+    console.log(`💾 Memoria de pedido guardada (${sucursal}): ${skus.length} SKUs`);
+  } catch (err) {
+    console.error("❌ Error guardando memoria de pedido:", err);
   }
 }
 
@@ -506,6 +632,7 @@ function saveRulesFromInputs() {
   });
   
   state.adminRules = nextRules;
+  state.adminRulesPorSucursal[state.sucursalActiva || "Jiquilisco"] = nextRules;
   persistRules();
   recalculateRows();
   applyAdminFilter();
@@ -514,13 +641,12 @@ function saveRulesFromInputs() {
   reglasFileName = "Reglas KOLO editadas manualmente";
   updateReglasStatusDisplay();
   
-  firestoreSetDocData("reglasMetadata", {
-    lastUpdate: reglasLastUpdate.toISOString(),
-    fileName: "Reglas KOLO editadas manualmente",
-    totalCount: Object.keys(state.adminRules).length
-  }).catch(e => console.warn("No se pudo guardar metadata de reglas"));
+  const sucursal = state.sucursalActiva || "Jiquilisco";
+  state.reglasMeta[sucursal] = { lastUpdate: reglasLastUpdate.toISOString(), fileName: reglasFileName, totalCount: Object.keys(state.adminRules).length };
+  firestoreSetDocData(`reglasMetadata_${slugSucursal(sucursal)}`, state.reglasMeta[sucursal])
+    .catch(e => console.warn("No se pudo guardar metadata de reglas"));
   
-  setStatus("✅ Reglas guardadas correctamente", false);
+  setStatus(`✅ Reglas guardadas correctamente (${sucursal})`, false);
 }
 
 function clearAllRules() {
@@ -630,11 +756,12 @@ function addNewSku() {
   reglasFileName = "SKU agregado manualmente";
   updateReglasStatusDisplay();
   
-  firestoreSetDocData("reglasMetadata", {
-    lastUpdate: reglasLastUpdate.toISOString(),
-    fileName: "SKU agregado manualmente",
-    totalCount: Object.keys(state.adminRules).length
-  }).catch(e => console.warn("No se pudo guardar metadata de reglas"));
+  {
+    const sucursal = state.sucursalActiva || "Jiquilisco";
+    state.reglasMeta[sucursal] = { lastUpdate: reglasLastUpdate.toISOString(), fileName: reglasFileName, totalCount: Object.keys(state.adminRules).length };
+    firestoreSetDocData(`reglasMetadata_${slugSucursal(sucursal)}`, state.reglasMeta[sucursal])
+      .catch(e => console.warn("No se pudo guardar metadata de reglas"));
+  }
   
   if (!state.listaCompleta.some(item => item.CODIGO === skuTrim)) {
     state.listaCompleta.push({
@@ -655,19 +782,23 @@ function addNewSku() {
 // FUNCIÓN CORREGIDA: IMPORTAR REGLAS - ACTUALIZA NOMBRES
 // ============================================================
 
-function importRulesExcel() {
+function importRulesExcel(sucursal) {
   if (!state.adminUnlocked) {
     alert("Debes iniciar sesión como administrador");
     return;
   }
-  
-  const fileInput = document.getElementById("adminExcelInput");
+
+  sucursal = sucursal || state.sucursalActiva || "Jiquilisco";
+  const inputId = sucursal === "Usulután" ? "adminExcelInputUsulutan" : "adminExcelInputJiquilisco";
+  const fileInput = document.getElementById(inputId) || document.getElementById("adminExcelInput");
   const file = fileInput.files[0];
   
   if (!file) {
     alert("❌ Por favor selecciona un archivo Excel o CSV primero.");
     return;
   }
+
+  activarSucursal(sucursal);
   
   const reader = new FileReader();
   reader.onload = async function(evt) {
@@ -837,15 +968,13 @@ function importRulesExcel() {
       reglasLastUpdate = new Date();
       reglasFileName = file.name;
       
-      await firestoreSetDocData("reglasMetadata", {
-        lastUpdate: reglasLastUpdate.toISOString(),
-        fileName: file.name,
-        totalCount: Object.keys(state.adminRules).length
-      }).catch(e => console.warn("No se pudo guardar metadata de reglas"));
+      state.reglasMeta[sucursal] = { lastUpdate: reglasLastUpdate.toISOString(), fileName: file.name, totalCount: Object.keys(state.adminRules).length };
+      await firestoreSetDocData(`reglasMetadata_${slugSucursal(sucursal)}`, state.reglasMeta[sucursal])
+        .catch(e => console.warn("No se pudo guardar metadata de reglas"));
       
       fileInput.value = "";
       
-      let mensaje = `✅ Procesados ${importedCount} SKUs.\n📊 Nuevos: ${nuevos}\n🔄 Actualizados: ${actualizados}`;
+      let mensaje = `✅ [${sucursal}] Procesados ${importedCount} SKUs.\n📊 Nuevos: ${nuevos}\n🔄 Actualizados: ${actualizados}`;
       if (actualizados > 0) {
         mensaje += `\n📝 Nombres actualizados para ${actualizados} SKUs.`;
       }
@@ -1748,31 +1877,23 @@ function renderAdminPagination(currentPage, totalPages, totalItems) {
 
 async function clearAllItems() {
   if (!state.adminUnlocked) return;
-  
-  const confirmed = confirm("⚠️ ¡ADVERTENCIA! ⚠️\n\nEsta acción ELIMINARÁ TODOS los SKUs del sistema.\n\nSe eliminarán:\n- Todos los SKUs (con o sin reglas)\n- Todas las reglas de mínimos y máximos\n- Todos los estados de confirmación\n\nEsta acción NO se puede deshacer.\n\n¿Estás SEGURO?");
+
+  const sucursal = state.sucursalActiva || "Jiquilisco";
+  const confirmed = confirm(`⚠️ ¡ADVERTENCIA! ⚠️\n\nEsta acción ELIMINARÁ TODOS los SKUs de la sucursal "${sucursal}".\n\nSe eliminarán (solo para ${sucursal}):\n- Todos los SKUs (con o sin reglas)\n- Todas las reglas de mínimos y máximos\n- Todos los estados de confirmación\n\nLa otra sucursal no se ve afectada. Esta acción NO se puede deshacer.\n\n¿Estás SEGURO?`);
   
   if (!confirmed) return;
   
   try {
-    setStatus("🗑️ Eliminando todos los SKUs...", false);
+    setStatus(`🗑️ Eliminando todos los SKUs de ${sucursal}...`, false);
     
-    state.adminRules = {};
-    localStorage.removeItem('tecnobahia_skus_sin_reglas');
-    
-    state.listaCompleta = [];
-    state.preciosLookup = {};
+    state.adminRulesPorSucursal[sucursal] = {};
+    state.adminRules = state.adminRulesPorSucursal[sucursal];
     
     await persistRules();
     
-    await firestoreSetDocData("reglasMetadata", {
-      lastUpdate: new Date().toISOString(),
-      fileName: "Todos los SKUs eliminados",
-      totalCount: 0
-    }).catch(e => console.warn("No se pudo guardar metadata de reglas"));
-    
-    if (typeof saveListaCompleta === "function") {
-      await saveListaCompleta();
-    }
+    state.reglasMeta[sucursal] = { lastUpdate: new Date().toISOString(), fileName: "Todos los SKUs eliminados", totalCount: 0 };
+    await firestoreSetDocData(`reglasMetadata_${slugSucursal(sucursal)}`, state.reglasMeta[sucursal])
+      .catch(e => console.warn("No se pudo guardar metadata de reglas"));
     
     recalculateRows();
     applyAdminFilter();
@@ -1785,8 +1906,8 @@ async function clearAllItems() {
       applyFilterAndSearch();
     }
     
-    setStatus("✅ Todos los SKUs han sido eliminados del sistema", false);
-    mostrarNotificacion("✅ Se eliminaron todos los SKUs del sistema", false);
+    setStatus(`✅ Todos los SKUs de ${sucursal} han sido eliminados`, false);
+    mostrarNotificacion(`✅ Se eliminaron todos los SKUs de ${sucursal}`, false);
     
   } catch (error) {
     console.error("Error al eliminar items:", error);

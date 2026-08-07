@@ -234,22 +234,36 @@
         <hr style="margin: 16px 0; border: none; border-top: 1px solid var(--border);">
 
         <!-- ============================================================ -->
-        <!-- REGLAS KOLO                                                    -->
+        <!-- REGLAS KOLO (por sucursal)                                     -->
         <!-- ============================================================ -->
+        <div class="row admin-tools" style="align-items: center;">
+          <label for="sucursalSelector"><strong>🏬 Sucursal activa (viendo/editando):</strong></label>
+          <select id="sucursalSelector">
+            <option value="Jiquilisco">Jiquilisco</option>
+            <option value="Usulután">Usulután</option>
+          </select>
+        </div>
+
+        <div class="row admin-tools" id="uploadJiquiliscoRow">
+          <input type="file" id="adminExcelInputJiquilisco" accept=".xlsx,.xls" />
+          <button id="btnImportExcelJiquilisco" class="btn-secondary">📋 Importar reglas KOLO — Jiquilisco</button>
+        </div>
+        <div class="row admin-tools" id="uploadUsulutanRow">
+          <input type="file" id="adminExcelInputUsulutan" accept=".xlsx,.xls" />
+          <button id="btnImportExcelUsulutan" class="btn-secondary">📋 Importar reglas KOLO — Usulután</button>
+        </div>
         <div class="row admin-tools">
-          <input type="file" id="adminExcelInput" accept=".xlsx,.xls" />
-          <button id="btnImportExcel" class="btn-secondary">📋 Importar reglas KOLO (Mín/Máx)</button>
-          <button id="btnAddSku" class="btn-secondary">➕ Agregar nuevo SKU</button>
+          <button id="btnAddSku" class="btn-secondary">➕ Agregar nuevo SKU (a la sucursal activa)</button>
         </div>
 
         <div class="hint" id="reglasStatusHint" style="margin-top: 8px;">
-          📋 <strong>Reglas KOLO cargadas</strong>: <span id="reglasInfo">No hay reglas cargadas</span>
+          📋 <strong>Reglas KOLO cargadas (<span id="sucursalActivaLabel">Jiquilisco</span>)</strong>: <span id="reglasInfo">No hay reglas cargadas</span>
         </div>
 
         <div class="hint">
-          📋 <strong>Archivo de reglas (KOLO)</strong>: Define mínimos y máximos por código desde el archivo de KOLO.<br>
-          Columnas requeridas: <strong>SKU</strong> (código), <strong>Minimo</strong> y <strong>Maximo</strong>.<br>
-          🔁 Al importar, los registros se fusionan sin duplicar.
+          📋 <strong>Archivos de reglas (KOLO)</strong>: cada sucursal tiene su propio archivo de mínimos y máximos.<br>
+          Al cargar un inventario, la app detecta automáticamente si es de <strong>Jiquilisco</strong> o <strong>Usulután</strong> y usa el archivo de reglas correspondiente.<br>
+          Columnas requeridas: <strong>SKU</strong> (código), <strong>Minimo</strong> y <strong>Maximo</strong>. Al importar, los registros se fusionan sin duplicar.
         </div>
 
         <!-- ============================================================ -->
@@ -402,7 +416,9 @@
     document.getElementById("btnSaveRules")?.addEventListener("click", saveRulesFromInputs);
     document.getElementById("btnClearRules")?.addEventListener("click", clearAllRules);
     document.getElementById("btnIngresar")?.addEventListener("click", unlockAdminPanel);
-    document.getElementById("btnImportExcel")?.addEventListener("click", importRulesExcel);
+    document.getElementById("btnImportExcelJiquilisco")?.addEventListener("click", () => importRulesExcel("Jiquilisco"));
+    document.getElementById("btnImportExcelUsulutan")?.addEventListener("click", () => importRulesExcel("Usulután"));
+    document.getElementById("sucursalSelector")?.addEventListener("change", (e) => onSucursalSelectorChange(e.target.value));
     document.getElementById("btnImportLista")?.addEventListener("click", importListaCompleta);
     document.getElementById("btnAddSku")?.addEventListener("click", addNewSku);
     document.getElementById("btnUploadPedidoTemplate")?.addEventListener("click", uploadPedidoTemplate);
@@ -446,6 +462,14 @@
     function showView(which) {
       state.currentView = which;
       if (which !== "login") persistSettings(); 
+
+      if (which === "report" && !state.inventoryLoaded && (state.activeFilter === "pedido" || state.activeFilter === "pedir")) {
+        state.activeFilter = "all";
+        const chips = document.querySelectorAll(".filter-chip");
+        chips.forEach(chip => {
+          chip.classList.toggle("active", chip.getAttribute("data-filter") === "all");
+        });
+      }
       
       const loginView = document.getElementById("viewLogin");
       const reportView = document.getElementById("viewReport");
@@ -489,6 +513,11 @@
       
       await loadRules();
       console.log("✅ Reglas cargadas:", Object.keys(state.adminRules).length);
+
+      if (typeof loadPedidoMemoria === "function") {
+        await loadPedidoMemoria();
+        console.log("✅ Memoria de pedidos cargada");
+      }
       
       await loadListaCompleta();
       console.log("✅ Lista completa cargada");
