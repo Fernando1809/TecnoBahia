@@ -5,7 +5,13 @@ function norm(v) {
 }
 
 function normalizeSku(v) {
-  return String(v ?? "").trim().toUpperCase().replace(/\s+/g, "");
+  return String(v ?? "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/[^0-9A-Z]/g, "");
 }
 
 function toNum(v) {

@@ -466,17 +466,24 @@ function renderTableDynamic(data, filterType) {
         const hasMinMax = (r.Minimo && r.Minimo !== "") || (r.Maximo && r.Maximo !== "");
         const estaEnMinimo = isProductoEnMinimo(r);
         const esManual = r._manual === true;
-        
-        if (invValue === 0 && esManual) {
-          displayValue = `<span style="color: var(--warning); font-weight: bold;">0</span>`;
+        const inventoryValue = Math.floor(invValue).toLocaleString("en-US");
+        let circleClass = "";
+
+        if (esManual) {
+          circleClass = "white";
         } else if (invValue === 0) {
-          displayValue = `<span style="color: var(--danger); font-weight: bold;">0</span>`;
+          circleClass = "red";
         } else if (estaEnMinimo) {
-          displayValue = `<span style="color: var(--warning); font-weight: bold;">${Math.floor(invValue)}</span>`;
-        } else {
-          displayValue = Math.floor(invValue).toLocaleString("en-US");
+          circleClass = "orange";
         }
-        
+
+        displayValue = `<span class="inventory-badge${esManual ? ' manual' : ''}">`;
+        if (circleClass) {
+          displayValue += `<span class="inventory-indicator ${circleClass}" title="${esManual ? 'Agregado manual' : invValue === 0 ? 'Sin stock' : 'En mínimo'}"></span>`;
+        }
+        displayValue += `<span class="inventory-number">${inventoryValue}</span>`;
+        displayValue += `</span>`;
+
         if (hasMinMax) {
           displayValue += ` <span class="info-icon" onclick="event.stopPropagation(); showMinMaxInfo('${escapeHtml(r.SKU)}')" title="Ver Minimo y Maximo">i</span>`;
         }
@@ -783,6 +790,7 @@ function applyFilterAndSearch() {
     // ==================== FILTRO DE PEDIDO (NUEVA LÓGICA) ====================
     filtered = filtered.filter(r => {
       if (r.PedidoSugerido <= 0) return false;
+      if (r._manual === true) return true;
 
       const inventario = r.Inventario;
       const estaEnMinimo = isProductoEnMinimo(r);
@@ -1104,7 +1112,8 @@ function addProductToPedido() {
   // 3. Agregar o actualizar en state.rows MANUALMENTE (FORZANDO INVENTARIO A 0)
   if (!state.rows) state.rows = [];
   
-  const existingRow = state.rows.find(r => r.SKU === sku);
+  const skuKey = normalizeSku(sku);
+  const existingRow = state.rows.find(r => normalizeSku(r.SKU) === skuKey);
   
   if (existingRow) {
     const inventarioReal = existingRow.Inventario !== undefined && existingRow.Inventario !== null && existingRow.Inventario !== ""
@@ -1121,12 +1130,13 @@ function addProductToPedido() {
     if (!existingRow.Producto || existingRow.Producto === "Sin nombre") {
       existingRow.Producto = producto;
     }
+    existingRow.SKU = sku.toUpperCase();
     existingRow._manual = true;
     console.log("✏️ Producto actualizado conservando inventario real:", existingRow);
   } else {
     // AGREGAR NUEVO - iniciar sin inventario real conocido
     const newRow = {
-      SKU: sku,
+      SKU: sku.toUpperCase(),
       Producto: producto,
       Inventario: 0,
       CostoUnitario: precio,

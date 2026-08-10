@@ -100,8 +100,13 @@
           <input type="text" id="searchInput" placeholder="🔍 Buscar SKU o producto..." />
         </div>
         
-        <div class="row" style="margin: 12px 0;">
+        <div class="row" style="margin: 12px 0; gap: 12px; align-items: center; flex-wrap: wrap;">
           <button id="btnAddProductToOrder" class="btn-secondary" style="background: var(--primary); color: white;">➕ Agregar producto a pedido</button>
+          <div class="color-legend">
+            <span><span class="legend-dot legend-red"></span> 0 stock</span>
+            <span><span class="legend-dot legend-orange"></span> Requiere pedido</span>
+            <span><span class="legend-dot legend-white"></span> Agregado adicional</span>
+          </div>
         </div>
 
         <!-- Modal para agregar producto -->
@@ -203,17 +208,17 @@
         <!-- PRECIOS                                                        -->
         <!-- ============================================================ -->
         <div class="row admin-tools">
-          <input type="file" id="listaCompletaInput" accept=".xlsx,.xls,.xlsm" />
-          <button id="btnImportLista" class="btn-secondary">💰 Cargar PRECIOS (archivo precios.xlsm)</button>
+          <input type="file" id="listaCompletaInput" accept=".xlsx,.xls,.xlsm,.csv" />
+          <button id="btnImportLista" class="btn-secondary">💰 Cargar PRECIOS (archivo de costos unitarios)</button>
           <button id="btnClearPrices" class="btn-secondary" style="background: #dc2626; color: white;">🗑️ Limpiar precios</button>
         </div>
         <div class="hint" id="preciosStatusHint" style="margin-top: 8px;">
           📊 <strong>Precios cargados</strong>: <span id="preciosInfo">No hay precios cargados</span>
         </div>
         <div class="hint">
-          💰 <strong>Archivo de precios</strong>: Sube el archivo de Sherwin Williams (precios.xlsm o similar).<br>
-          ✅ El sistema detecta automáticamente: <strong>CODIGOS</strong>, <strong>DESCRIPCION</strong> y <strong>PAD CON IVA</strong>.<br>
-          📊 Si el archivo solo trae PAD sin IVA, se convertirá automáticamente a PAD con IVA.
+          💰 <strong>Archivo de precios</strong>: Sube el Excel o CSV con el nuevo formato de costos unitarios.<br>
+          ✅ El sistema detecta automáticamente: <strong>SKU/CÓDIGO</strong>, <strong>NOMBRE/DESCRIPCIÓN</strong> y <strong>COSTO UNITARIO</strong>.<br>
+          📊 Si el archivo usa el formato antiguo, también puede leer PAD CON IVA / PAD SIN IVA.
         </div>
 
         <!-- ============================================================ -->

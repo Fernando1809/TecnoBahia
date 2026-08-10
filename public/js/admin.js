@@ -1106,12 +1106,103 @@ async function importListaCompleta() {
   const reader = new FileReader();
   reader.onload = async function(evt) {
     try {
-      const data = new Uint8Array(evt.target.result);
-      const workbook = XLSX.read(data, { type: "array" });
+      let workbook;
+      const fileNameLower = (file.name || "").toLowerCase();
+      if (fileNameLower.endsWith('.csv')) {
+        const text = typeof evt.target.result === 'string'
+          ? evt.target.result
+          : new TextDecoder('utf-8').decode(evt.target.result);
+        workbook = XLSX.read(text, { type: 'string' });
+      } else {
+        const data = new Uint8Array(evt.target.result);
+        workbook = XLSX.read(data, { type: 'array' });
+      }
       
-      let sheetName = workbook.SheetNames.find(n => norm(n).includes("lista"));
-      if (!sheetName) sheetName = workbook.SheetNames[0];
-      
+      let sheetName = workbook.SheetNames[0];
+      let headerRowIndex = 0;
+      let bestMatch = { sheetName, headerRowIndex, score: -1, type: null };
+
+      const keywordMatches = (cell) => {
+        const hNorm = norm(String(cell || ""));
+        return {
+          isSku: ['codigo', 'sku', 'clave', 'código', 'artículo', 'articulo', 'item'].some(k => hNorm === k),
+          isDesc: ['descripcion', 'producto', 'nombre', 'articulo', 'artículo', 'item'].some(k => hNorm === k),
+          isUnitarioExact: hNorm === 'costo unitario' || hNorm === 'precio unitario',
+          isUnitario: hNorm.includes('unitario') || hNorm.includes('costo unitario') || hNorm.includes('precio unitario') || hNorm === 'costo' || hNorm === 'precio',
+          isPadConIva: hNorm.includes('pad') && hNorm.includes('con') && hNorm.includes('iva'),
+          isPadSinIva: hNorm.includes('pad') && hNorm.includes('sin') && hNorm.includes('iva')
+        };
+      };
+
+      const getHeaderRowInfo = (row) => {
+        const info = {
+          skuCols: [],
+          descCols: [],
+          unitarioExactCols: [],
+          unitarioCols: [],
+          padConCols: [],
+          padSinCols: []
+        };
+
+        row.forEach((cell, idx) => {
+          const { isSku, isDesc, isUnitarioExact, isUnitario, isPadConIva, isPadSinIva } = keywordMatches(cell);
+          if (isSku) info.skuCols.push(idx);
+          if (isDesc) info.descCols.push(idx);
+          if (isUnitarioExact) info.unitarioExactCols.push(idx);
+          if (isUnitario) info.unitarioCols.push(idx);
+          if (isPadConIva) info.padConCols.push(idx);
+          if (isPadSinIva) info.padSinCols.push(idx);
+        });
+
+        info.hasSku = info.skuCols.length > 0;
+        info.hasUnitarioExact = info.unitarioExactCols.length > 0;
+        info.hasUnitario = info.unitarioCols.length > 0;
+        info.hasPad = info.padConCols.length > 0 || info.padSinCols.length > 0;
+
+        if (info.hasSku && info.hasUnitarioExact) {
+          info.type = 'sku-unitario-exact';
+          info.score = 300 + info.skuCols.length * 5 + info.unitarioExactCols.length * 10 + info.descCols.length;
+        } else if (info.hasSku && info.hasUnitario) {
+          info.type = 'sku-unitario';
+          info.score = 220 + info.skuCols.length * 5 + info.unitarioCols.length * 5 + info.descCols.length;
+        } else if (info.hasSku && info.hasPad) {
+          info.type = 'sku-pad';
+          info.score = 140 + info.skuCols.length * 5 + (info.padConCols.length + info.padSinCols.length) * 3 + info.descCols.length;
+        } else if (info.hasUnitarioExact) {
+          info.type = 'unitario-exact';
+          info.score = 90 + info.unitarioExactCols.length * 5 + info.descCols.length;
+        } else if (info.hasUnitario) {
+          info.type = 'unitario';
+          info.score = 60 + info.unitarioCols.length * 2 + info.descCols.length;
+        } else {
+          info.type = 'other';
+          info.score = 0;
+        }
+
+        return info;
+      };
+
+      const headerCandidates = [];
+      for (const name of workbook.SheetNames) {
+        const sheet = workbook.Sheets[name];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+        for (let i = 0; i < Math.min(200, rows.length); i++) {
+          const row = Array.isArray(rows[i]) ? rows[i] : [];
+          if (!row.some(cell => String(cell || "").trim())) continue;
+          const info = getHeaderRowInfo(row);
+          if (info.score <= 0) continue;
+          headerCandidates.push({ sheetName: name, headerRowIndex: i, score: info.score, type: info.type, info });
+        }
+      }
+
+      headerCandidates.sort((a, b) => b.score - a.score);
+      if (headerCandidates.length > 0) {
+        bestMatch = headerCandidates[0];
+      }
+
+      sheetName = bestMatch.sheetName;
+      headerRowIndex = bestMatch.headerRowIndex;
+      console.log(`📌 Mejor fila de encabezado: hoja='${sheetName}', fila=${headerRowIndex + 1}, tipo=${bestMatch.type}, puntaje=${bestMatch.score}`);
       const sheet = workbook.Sheets[sheetName];
       const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
       
@@ -1121,36 +1212,37 @@ async function importListaCompleta() {
         return;
       }
       
-      let headerRowIndex = 0;
-      for (let i = 0; i < Math.min(20, aoa.length); i++) {
-        const row = Array.isArray(aoa[i]) ? aoa[i] : [];
-        const joined = norm(row.join(" | "));
-        if (joined.includes("codigo") && (joined.includes("pad") || joined.includes("psm"))) {
-          headerRowIndex = i;
-          break;
-        }
-      }
-      
       const headerRow = (aoa[headerRowIndex] || []).map((h, idx) => String(h || "").trim() || `Col_${idx + 1}`);
+      console.log(`📋 Cabecera detectada en hoja '${sheetName}', fila ${headerRowIndex + 1}:`, headerRow);
+      console.log(`📋 Cabecera detectada en hoja '${sheetName}', fila ${headerRowIndex + 1}:`, headerRow);
       
       let codigoCol = null;
       let descCol = null;
       let precioColPADConIva = null;
       let precioColPADSinIva = null;
+      let precioColUnitario = null;
       
       headerRow.forEach((header, idx) => {
         const hNorm = norm(header);
-        if (hNorm.includes("codigo")) codigoCol = idx;
-        if (hNorm.includes("descripcion") || hNorm.includes("producto")) descCol = idx;
+        if (hNorm.includes("codigo") || hNorm.includes("sku") || hNorm.includes("clave")) codigoCol = idx;
+        if (hNorm.includes("descripcion") || hNorm.includes("producto") || hNorm.includes("nombre")) descCol = idx;
+        if ((hNorm.includes("costo") && hNorm.includes("unitario")) || (hNorm.includes("precio") && hNorm.includes("unitario")) || hNorm === "unitario") {
+          precioColUnitario = idx;
+        }
         if (hNorm.includes("pad") && hNorm.includes("con") && hNorm.includes("iva")) precioColPADConIva = idx;
         if (hNorm.includes("pad") && hNorm.includes("sin") && hNorm.includes("iva")) precioColPADSinIva = idx;
       });
       
-      if (codigoCol === null || (precioColPADConIva === null && precioColPADSinIva === null)) {
+      console.log(`📌 Columnas detectadas: codigo=${codigoCol}, descripcion=${descCol}, costo unitario=${precioColUnitario}, pad con iva=${precioColPADConIva}, pad sin iva=${precioColPADSinIva}`);
+      
+      if (codigoCol === null || (precioColUnitario === null && precioColPADConIva === null && precioColPADSinIva === null)) {
         setStatus("❌ No se encontraron las columnas necesarias", true);
         fileInput.value = "";
         return;
       }
+      
+      const useUnitPrice = precioColUnitario !== null;
+      const formatName = useUnitPrice ? 'costo unitario / precio unitario' : 'PAD';
       
       state.listaCompleta = [];
       state.preciosLookup = {};
@@ -1164,9 +1256,14 @@ async function importListaCompleta() {
         const codigo = String(rowArr[codigoCol] || "").trim().toUpperCase();
         const descripcion = descCol !== null ? String(rowArr[descCol] || "").trim() : "";
         
-        let precioConIva = precioColPADConIva !== null
-          ? toNum(rowArr[precioColPADConIva])
-          : Math.round(toNum(rowArr[precioColPADSinIva]) * 1.14 * 100) / 100;
+        let precioConIva = 0;
+        if (useUnitPrice) {
+          precioConIva = toNum(rowArr[precioColUnitario]);
+        } else if (precioColPADConIva !== null) {
+          precioConIva = toNum(rowArr[precioColPADConIva]);
+        } else {
+          precioConIva = Math.round(toNum(rowArr[precioColPADSinIva]) * 1.14 * 100) / 100;
+        }
         
         if (precioConIva > 1140) {
           errores.push(`${codigo}: ${precioConIva} - precio alto`);
@@ -1179,6 +1276,7 @@ async function importListaCompleta() {
           DESCRIPCION: descripcion,
           PRECIO_CON_IVA: precioConIva
         };
+        if (useUnitPrice) item.PRECIO_UNITARIO = precioConIva;
         
         state.listaCompleta.push(item);
         state.preciosLookup[codigo] = precioConIva;
@@ -1203,7 +1301,7 @@ async function importListaCompleta() {
       
       fileInput.value = "";
       
-      let mensaje = `✅ ${processedCount} precios cargados exitosamente (PAD con IVA).`;
+      let mensaje = `✅ ${processedCount} precios cargados exitosamente (${formatName}).`;
       if (errores.length > 0) {
         mensaje += ` ⚠️ Se detectaron ${errores.length} precios altos. Verifica el listado de precios.`;
       }
@@ -1216,7 +1314,11 @@ async function importListaCompleta() {
       fileInput.value = "";
     }
   };
-  reader.readAsArrayBuffer(file);
+  if ((file.name || "").toLowerCase().endsWith('.csv')) {
+    reader.readAsText(file, 'UTF-8');
+  } else {
+    reader.readAsArrayBuffer(file);
+  }
 }
 
 // ============================================================
