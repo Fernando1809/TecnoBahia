@@ -7,8 +7,12 @@
 // Estado de ordenamiento y paginación
 if (typeof window.sortState === 'undefined') {
   window.sortState = {
-    column: 'Inventario',
-    direction: 'desc'
+    column: null,
+    direction: 'desc',
+    // `user` indica si el orden fue establecido por un clic del usuario.
+    user: false,
+    // Cuando true el orden de Inventario es mayor->menor; cuando false, menor->mayor.
+    inventarioDesc: false
   };
 }
 
@@ -294,14 +298,16 @@ function renderTableDynamic(data, filterType) {
   let columns = [];
   const selectionColumn = { key: "__select__", label: "", sortable: false };
   
-  if (activeFilter === "pedido" || activeFilter === "pedir") {
-    // 🔴 NUEVO ORDEN: Inventario -> Pedido -> Costo unitario -> Costo Total
+    if (activeFilter === "pedido" || activeFilter === "pedir") {
+      // 🔴 NUEVO ORDEN: Minimo -> Maximo -> Inventario -> Pedido -> Costo Un. -> Costo Total
     columns = [
       { key: "SKU", label: "SKU", sortable: true },
       { key: "Producto", label: "Producto", sortable: false },
+      { key: "Minimo", label: "minimo", sortable: true },
+      { key: "Maximo", label: "maximo", sortable: true },
       { key: "Inventario", label: "Inventario", sortable: true },
       { key: "PedidoSugerido", label: "Pedido", sortable: true },
-      { key: "CostoUnitario", label: "Costo unitario", sortable: true },
+      { key: "CostoUnitario", label: "Costo Un.", sortable: true },
       { key: "CostoTotal", label: "Costo total", sortable: true }
     ];
   } else if (activeFilter === "exceso") {
@@ -309,7 +315,7 @@ function renderTableDynamic(data, filterType) {
       { key: "SKU", label: "SKU", sortable: true },
       { key: "Producto", label: "Producto", sortable: false },
       { key: "Inventario", label: "Inventario", sortable: true },
-      { key: "CostoUnitario", label: "Costo unitario", sortable: true },
+      { key: "CostoUnitario", label: "Costo Un.", sortable: true },
       { key: "CostoTotal", label: "Costo total", sortable: true },
       { key: "Exceso", label: "Exceso", sortable: true }
     ];
@@ -318,7 +324,7 @@ function renderTableDynamic(data, filterType) {
       { key: "SKU", label: "SKU", sortable: true },
       { key: "Producto", label: "Producto", sortable: false },
       { key: "Inventario", label: "Inventario", sortable: true },
-      { key: "CostoUnitario", label: "Costo unitario", sortable: true },
+      { key: "CostoUnitario", label: "Costo Un.", sortable: true },
       { key: "CostoTotal", label: "Costo total", sortable: true },
       { key: "Estado", label: "Estado", sortable: false }
     ];
@@ -327,7 +333,7 @@ function renderTableDynamic(data, filterType) {
       { key: "SKU", label: "SKU", sortable: true },
       { key: "Producto", label: "Producto", sortable: false },
       { key: "Inventario", label: "Inventario", sortable: true },
-      { key: "CostoUnitario", label: "Costo unitario", sortable: true },
+      { key: "CostoUnitario", label: "Costo Un.", sortable: true },
       { key: "Minimo", label: "Minimo", sortable: true },
       { key: "Maximo", label: "Maximo", sortable: true },
       { key: "PedidoSugerido", label: "Pedido", sortable: true },
@@ -338,7 +344,7 @@ function renderTableDynamic(data, filterType) {
       { key: "SKU", label: "SKU", sortable: true },
       { key: "Producto", label: "Producto", sortable: false },
       { key: "Inventario", label: "Inventario", sortable: true },
-      { key: "CostoUnitario", label: "Costo unitario", sortable: true },
+      { key: "CostoUnitario", label: "Costo Un.", sortable: true },
       { key: "PedidoSugerido", label: "Pedido", sortable: true },
       { key: "CostoTotal", label: "Costo total", sortable: true },
       { key: "Estado", label: "Estado", sortable: false }
@@ -353,11 +359,16 @@ function renderTableDynamic(data, filterType) {
     }
 
     let sortIcon = '';
-    if (col.sortable) {
+      if (col.sortable) {
       if (window.sortState.column === col.key) {
         sortIcon = window.sortState.direction === 'desc' ? ' 🔽' : ' 🔼';
       } else if (col.key === 'Inventario' && !window.sortState.column) {
         sortIcon = ' 🔽';
+      }
+      // Para la columna Inventario añadimos un único botón pequeño explícito (sin onclick en el <th>)
+      if (col.key === 'Inventario') {
+        const invBtnLabel = (window.sortState && window.sortState.inventarioDesc) ? '↓' : '↑';
+        return `<th style="position: relative;">${col.label} <button class="small-sort-btn" onclick="event.stopPropagation(); sortTable('Inventario')" title="Alternar Inventario: mayor/menor">${invBtnLabel}</button></th>`;
       }
       return `<th style="cursor: pointer;" onclick="sortTable('${col.key}')">${col.label}${sortIcon}</th>`;
     }
@@ -375,27 +386,47 @@ function renderTableDynamic(data, filterType) {
   let sortedData = [...data];
   
   if (activeFilter === "pedido" || activeFilter === "pedir") {
-    // Si el usuario hizo clic en una columna, reordenar según esa columna
-    if (window.sortState.column && window.sortState.column !== 'Inventario') {
-      sortedData.sort((a, b) => {
-        let valA = a[window.sortState.column];
-        let valB = b[window.sortState.column];
-        
-        if (valA === undefined || valA === null || valA === "") valA = 0;
-        if (valB === undefined || valB === null || valB === "") valB = 0;
-        
-        if (typeof valA === 'number' && typeof valB === 'number') {
-          return window.sortState.direction === 'desc' ? valB - valA : valA - valB;
+    // Si el usuario hizo clic en una columna, reordenar según esa columna (incluye Inventario)
+    if (window.sortState.user && window.sortState.column) {
+      // Orden personalizado para Inventario: cuando el usuario alterna, cambiamos entre
+      // "mayores primero" y "ceros primero". Para otras columnas, usamos orden genérico.
+      if (window.sortState.column === 'Inventario') {
+        if (window.sortState.inventarioDesc) {
+          // Mayores primero (orden descendente por Inventario)
+          sortedData.sort((a, b) => {
+            const aInv = Number(a.Inventario) || 0;
+            const bInv = Number(b.Inventario) || 0;
+            return bInv - aInv;
+          });
+        } else {
+          // Menores primero (orden ascendente por Inventario)
+          sortedData.sort((a, b) => {
+            const aInv = Number(a.Inventario) || 0;
+            const bInv = Number(b.Inventario) || 0;
+            return aInv - bInv;
+          });
         }
-        const strA = String(valA).toLowerCase();
-        const strB = String(valB).toLowerCase();
-        if (window.sortState.direction === 'desc') {
-          return strB.localeCompare(strA);
-        }
-        return strA.localeCompare(strB);
-      });
+      } else {
+        sortedData.sort((a, b) => {
+          let valA = a[window.sortState.column];
+          let valB = b[window.sortState.column];
+          
+          if (valA === undefined || valA === null || valA === "") valA = 0;
+          if (valB === undefined || valB === null || valB === "") valB = 0;
+          
+          if (typeof valA === 'number' && typeof valB === 'number') {
+            return window.sortState.direction === 'desc' ? valB - valA : valA - valB;
+          }
+          const strA = String(valA).toLowerCase();
+          const strB = String(valB).toLowerCase();
+          if (window.sortState.direction === 'desc') {
+            return strB.localeCompare(strA);
+          }
+          return strA.localeCompare(strB);
+        });
+      }
     }
-    // Si no hay ordenamiento o es Inventario, mantener orden: zero primero, luego mínimo
+      // Si no hay ordenamiento por parte del usuario, mantener orden: zero primero, luego mínimo
   } else if (window.sortState.column) {
     sortedData.sort((a, b) => {
       let valA = a[window.sortState.column];
@@ -484,9 +515,7 @@ function renderTableDynamic(data, filterType) {
         displayValue += `<span class="inventory-number">${inventoryValue}</span>`;
         displayValue += `</span>`;
 
-        if (hasMinMax) {
-          displayValue += ` <span class="info-icon" onclick="event.stopPropagation(); showMinMaxInfo('${escapeHtml(r.SKU)}')" title="Ver Minimo y Maximo">i</span>`;
-        }
+        // Se eliminó el botón que mostraba Minimo/Maximo; ahora se muestran columnas separadas
       }
       else if (col.key === "Producto") {
         let baseValue = "";
@@ -711,11 +740,20 @@ function resetReportPagination() {
 }
 
 function sortTable(columnKey) {
-  if (window.sortState.column === columnKey) {
-    window.sortState.direction = window.sortState.direction === 'desc' ? 'asc' : 'desc';
+  // Manejo especial para Inventario: alternar entre mostrar primero mayores y mostrar primero ceros
+  if (columnKey === 'Inventario') {
+    window.sortState.inventarioDesc = !window.sortState.inventarioDesc;
+    window.sortState.column = 'Inventario';
+    window.sortState.user = true;
+    window.sortState.direction = window.sortState.inventarioDesc ? 'desc' : 'asc';
   } else {
-    window.sortState.column = columnKey;
-    window.sortState.direction = 'desc';
+    if (window.sortState.column === columnKey) {
+      window.sortState.direction = window.sortState.direction === 'desc' ? 'asc' : 'desc';
+    } else {
+      window.sortState.column = columnKey;
+      window.sortState.direction = 'desc';
+    }
+    window.sortState.user = true;
   }
   resetReportPagination();
   applyFilterAndSearch();
@@ -804,30 +842,43 @@ function applyFilterAndSearch() {
       return true;
     });
 
-    // 🔴 ORDENAR: PRIMERO los que tienen inventario = 0, LUEGO los que están en mínimo
-    filtered.sort((a, b) => {
-      const aZero = a.Inventario === 0;
-      const bZero = b.Inventario === 0;
-      const aMin = isProductoEnMinimo(a);
-      const bMin = isProductoEnMinimo(b);
-      const aManual = a._manual === true;
-      const bManual = b._manual === true;
+    // Ordenar por Inventario cuando el usuario active ese modo
+    if (window.sortState.column === 'Inventario') {
+      if (window.sortState.inventarioDesc) {
+        filtered.sort((a, b) => {
+          const aInv = Number(a.Inventario) || 0;
+          const bInv = Number(b.Inventario) || 0;
+          return bInv - aInv;
+        });
+      } else {
+        filtered.sort((a, b) => {
+          const aInv = Number(a.Inventario) || 0;
+          const bInv = Number(b.Inventario) || 0;
+          return aInv - bInv;
+        });
+      }
+    } else {
+      // Orden por defecto del filtro Pedido
+      filtered.sort((a, b) => {
+        const aZero = a.Inventario === 0;
+        const bZero = b.Inventario === 0;
+        const aMin = isProductoEnMinimo(a);
+        const bMin = isProductoEnMinimo(b);
+        const aManual = a._manual === true;
+        const bManual = b._manual === true;
 
-      if (aManual && !bManual) return -1;
-      if (!aManual && bManual) return 1;
+        if (aManual && !bManual) return -1;
+        if (!aManual && bManual) return 1;
 
-      if (aZero && !bZero) return -1;
-      if (!aZero && bZero) return 1;
+        if (aZero && !bZero) return -1;
+        if (!aZero && bZero) return 1;
 
-      if (aMin && !bMin) return -1;
-      if (!aMin && bMin) return 1;
+        if (aMin && !bMin) return -1;
+        if (!aMin && bMin) return 1;
 
-      return a.SKU.localeCompare(b.SKU);
-    });
-
-    // Resetear el ordenamiento para que el orden personalizado prevalezca
-    window.sortState.column = null;
-    window.sortState.direction = 'desc';
+        return a.SKU.localeCompare(b.SKU);
+      });
+    }
   } else if (currentFilter === "exceso") {
     filtered = filtered.filter(r => {
       const hasMaxRule = (r.Maximo !== "" && r.Maximo !== undefined && r.Maximo !== null);
