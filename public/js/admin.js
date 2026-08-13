@@ -463,13 +463,26 @@ async function loadPedidoMemoria() {
 
 function getPedidoAnteriorSet(sucursal) {
   const memoria = state.pedidoMemoriaPorSucursal && state.pedidoMemoriaPorSucursal[sucursal];
-  if (!memoria || !Array.isArray(memoria.skus)) return new Set();
+  if (!memoria) return new Map();
 
-  const normalized = new Set();
-  memoria.skus.forEach(sku => {
-    if (sku) normalized.add(String(sku).trim().toUpperCase());
-  });
-  return normalized;
+  // Retornar Map con SKU -> cantidad para acceso rápido
+  const map = new Map();
+  if (memoria.cantidades && typeof memoria.cantidades === 'object') {
+    // Nueva estructura con cantidades
+    Object.entries(memoria.cantidades).forEach(([sku, cantidad]) => {
+      if (sku) {
+        map.set(String(sku).trim().toUpperCase(), cantidad);
+      }
+    });
+  } else if (Array.isArray(memoria.skus)) {
+    // Retrocompatibilidad: si solo tiene array de SKUs, agregar cantidad 0
+    memoria.skus.forEach(sku => {
+      if (sku) {
+        map.set(String(sku).trim().toUpperCase(), 0);
+      }
+    });
+  }
+  return map;
 }
 
 /**
@@ -484,7 +497,20 @@ function mostrarMemoriaPedidoAnterior(sucursal) {
   }
 
   const fecha = memoria.fecha ? new Date(memoria.fecha).toLocaleDateString('es-ES') : "fecha desconocida";
-  const preview = memoria.skus.slice(0, 15).join(", ");
+  
+  // Crear preview con cantidades si están disponibles
+  let preview = "";
+  if (memoria.cantidades && typeof memoria.cantidades === 'object') {
+    // Nueva estructura con cantidades
+    preview = memoria.skus.slice(0, 15).map(sku => {
+      const cantidad = memoria.cantidades[sku] || 0;
+      return cantidad > 0 ? `${sku} (${cantidad})` : sku;
+    }).join(", ");
+  } else {
+    // Retrocompatibilidad: sin cantidades
+    preview = memoria.skus.slice(0, 15).join(", ");
+  }
+  
   const resto = memoria.skus.length > 15 ? ` y ${memoria.skus.length - 15} más` : "";
 
   console.log(`🕘 Pedido anterior (${sucursal}, ${fecha}) - ${memoria.skus.length} SKUs:`, memoria.skus);
@@ -494,12 +520,22 @@ function mostrarMemoriaPedidoAnterior(sucursal) {
 /**
  * Guarda en memoria (state + Firestore) los SKUs del pedido recién generado
  * para esta sucursal, reemplazando la memoria anterior.
+ * Ahora también guarda las cantidades (PedidoSugerido) de cada SKU.
  */
 async function guardarMemoriaPedidoActual(sucursal, productsToOrder) {
-  const skus = (productsToOrder || []).map(p => p.SKU).filter(Boolean);
+  // Crear objeto con SKU: cantidad
+  const cantidadPorSKU = {};
+  (productsToOrder || []).forEach(p => {
+    if (p.SKU) {
+      cantidadPorSKU[String(p.SKU).trim().toUpperCase()] = p.PedidoSugerido || 0;
+    }
+  });
+
+  const skus = Object.keys(cantidadPorSKU);
   const memoria = {
     fecha: new Date().toISOString(),
     skus: skus,
+    cantidades: cantidadPorSKU,  // NUEVO: guardar cantidades por SKU
     totalItems: skus.length
   };
 
@@ -508,7 +544,7 @@ async function guardarMemoriaPedidoActual(sucursal, productsToOrder) {
 
   try {
     await firestoreSetDocData(`pedidoMemoria_${slugSucursal(sucursal)}`, memoria);
-    console.log(`💾 Memoria de pedido guardada (${sucursal}): ${skus.length} SKUs`);
+    console.log(`💾 Memoria de pedido guardada (${sucursal}): ${skus.length} SKUs con cantidades`);
   } catch (err) {
     console.error("❌ Error guardando memoria de pedido:", err);
   }

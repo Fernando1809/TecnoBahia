@@ -121,7 +121,11 @@ th, td {
   padding: 8px 6px;
 }
 
-th { background: var(--table-header-bg); }
+th {
+  background: var(--table-header-bg);
+  white-space: nowrap;
+  vertical-align: middle;
+}
 
 .tag-ok { color: var(--ok); font-weight: bold; }
 .tag-danger { color: var(--danger); font-weight: bold; }

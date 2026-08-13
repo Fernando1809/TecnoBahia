@@ -431,9 +431,6 @@ function updateMetrics(rows) {
     conPedido = rows.filter(r => {
       if (r.PedidoSugerido <= 0) return false;
       
-      // SI ES MANUAL, SIEMPRE CONTAR
-      if (r._manual === true) return true;
-      
       const inventario = r.Inventario;
       
       // Verificar si está en mínimo o por debajo de él

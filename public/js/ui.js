@@ -299,14 +299,14 @@ function renderTableDynamic(data, filterType) {
   const selectionColumn = { key: "__select__", label: "", sortable: false };
   
     if (activeFilter === "pedido" || activeFilter === "pedir") {
-      // 🔴 NUEVO ORDEN: Minimo -> Maximo -> Inventario -> Pedido -> Costo Un. -> Costo Total
+      // 🔴 NUEVO ORDEN: Inventario -> Pedido -> Min -> Max -> Costo Un. -> Costo Total
     columns = [
       { key: "SKU", label: "SKU", sortable: true },
       { key: "Producto", label: "Producto", sortable: false },
-      { key: "Minimo", label: "minimo", sortable: true },
-      { key: "Maximo", label: "maximo", sortable: true },
       { key: "Inventario", label: "Inventario", sortable: true },
       { key: "PedidoSugerido", label: "Pedido", sortable: true },
+      { key: "Minimo", label: "Min", sortable: true },
+      { key: "Maximo", label: "Max", sortable: true },
       { key: "CostoUnitario", label: "Costo Un.", sortable: true },
       { key: "CostoTotal", label: "Costo total", sortable: true }
     ];
@@ -333,10 +333,10 @@ function renderTableDynamic(data, filterType) {
       { key: "SKU", label: "SKU", sortable: true },
       { key: "Producto", label: "Producto", sortable: false },
       { key: "Inventario", label: "Inventario", sortable: true },
-      { key: "CostoUnitario", label: "Costo Un.", sortable: true },
-      { key: "Minimo", label: "Minimo", sortable: true },
-      { key: "Maximo", label: "Maximo", sortable: true },
       { key: "PedidoSugerido", label: "Pedido", sortable: true },
+      { key: "Minimo", label: "Min", sortable: true },
+      { key: "Maximo", label: "Max", sortable: true },
+      { key: "CostoUnitario", label: "Costo Un.", sortable: true },
       { key: "CostoTotal", label: "Costo total", sortable: true }
     ];
   } else {
@@ -462,8 +462,10 @@ function renderTableDynamic(data, filterType) {
     let estadoClass = "";
     let estadoTexto = "";
     const sucursal = state.inventoryOrigin || state.sucursalActiva || "Jiquilisco";
-    const pedidoAnteriorSet = typeof getPedidoAnteriorSet === "function" ? getPedidoAnteriorSet(sucursal) : new Set();
-    const fueEnPedidoAnterior = pedidoAnteriorSet.has(String(r.SKU || "").trim().toUpperCase());
+    const pedidoAnteriorSet = typeof getPedidoAnteriorSet === "function" ? getPedidoAnteriorSet(sucursal) : new Map();
+    const skuNormalizado = String(r.SKU || "").trim().toUpperCase();
+    const fueEnPedidoAnterior = pedidoAnteriorSet.has(skuNormalizado);
+    const cantidadAnterior = fueEnPedidoAnterior ? Number(pedidoAnteriorSet.get(skuNormalizado)) || 0 : 0;
     
     if (r.PedidoSugerido > 0) {
       estadoClass = "tag-danger";
@@ -526,7 +528,8 @@ function renderTableDynamic(data, filterType) {
         }
 
         if (fueEnPedidoAnterior) {
-          displayValue = `${baseValue} <span style="margin-left:6px; color:var(--warning); font-size:11px; font-weight:bold;">↩️ anterior</span>`;
+          const cantidadTexto = cantidadAnterior > 0 ? ` (${cantidadAnterior})` : "";
+          displayValue = `${baseValue} <span style="margin-left:6px; color:var(--warning); font-size:11px; font-weight:bold;">↩️ anterior${cantidadTexto}</span>`;
         } else {
           displayValue = baseValue;
         }
@@ -575,7 +578,7 @@ function renderTableDynamic(data, filterType) {
       if (col.key === "PedidoSugerido" && r.PedidoSugerido > 0) className = "tag-danger";
 
       const isNumeric = ["Inventario", "CostoUnitario", "PedidoSugerido", "CostoTotal", "Exceso", "Minimo", "Maximo"].includes(col.key);
-      const styleAlign = isNumeric ? ' style="text-align: right;"' : '';
+      const styleAlign = col.key === "Inventario" ? ' style="text-align: center;"' : (isNumeric ? ' style="text-align: right;"' : '');
 
       return `<td class="${className}"${styleAlign}>${displayValue}</td>`;
     }).join('');
@@ -828,7 +831,6 @@ function applyFilterAndSearch() {
     // ==================== FILTRO DE PEDIDO (NUEVA LÓGICA) ====================
     filtered = filtered.filter(r => {
       if (r.PedidoSugerido <= 0) return false;
-      if (r._manual === true) return true;
 
       const inventario = r.Inventario;
       const estaEnMinimo = isProductoEnMinimo(r);
@@ -1016,10 +1018,17 @@ function searchProductsInListaCompleta(searchTerm) {
       
       if (matches && !resultsMap.has(sku)) {
         const precio = (state.preciosLookup && state.preciosLookup[sku]) ? state.preciosLookup[sku] : 0;
+        // Buscar si este SKU ya tiene inventario real cargado
+        const skuKey = normalizeSku(sku);
+        const rowExistente = (state.rows || []).find(r => normalizeSku(r.SKU) === skuKey);
+        const inventario = rowExistente && rowExistente.Inventario !== undefined && rowExistente.Inventario !== null
+          ? Number(rowExistente.Inventario)
+          : null;
         resultsMap.set(sku, {
           SKU: sku,
           Producto: state.adminRules[sku].producto || sku,
           Precio: precio,
+          Inventario: inventario,
           source: "reglas"
         });
       }
@@ -1038,6 +1047,7 @@ function searchProductsInListaCompleta(searchTerm) {
           SKU: row.SKU,
           Producto: row.Producto || row.SKU,
           Precio: row.CostoUnitario || 0,
+          Inventario: row.Inventario !== undefined && row.Inventario !== null ? Number(row.Inventario) : null,
           source: "inventario"
         });
       }
@@ -1063,11 +1073,24 @@ function renderSearchResults(results) {
   resultsDiv.innerHTML = results.map(item => {
     const precioMostrar = item.Precio > 0 ? `$${fmt(item.Precio)}` : '<span style="color: var(--warning);">Sin precio</span>';
     const sourceIcon = item.source === "precios" ? "💰" : (item.source === "reglas" ? "📋" : "📦");
+
+    let inventarioMostrar;
+    if (item.Inventario === null || item.Inventario === undefined) {
+      inventarioMostrar = '<span style="color: var(--muted);">Sin inventario</span>';
+    } else if (item.Inventario === 0) {
+      inventarioMostrar = '<span style="color: var(--danger); font-weight: bold;">0 en existencia</span>';
+    } else {
+      inventarioMostrar = `<span style="color: var(--ok); font-weight: bold;">${fmt(item.Inventario)} en existencia</span>`;
+    }
+
     return `
       <div class="search-result-item" data-sku="${escapeHtml(item.SKU)}" data-name="${escapeHtml(item.Producto)}" data-price="${item.Precio}">
         <div class="search-result-sku"><strong>${escapeHtml(item.SKU)}</strong> <span style="font-size: 10px;">${sourceIcon}</span></div>
         <div class="search-result-name">${escapeHtml(item.Producto)}</div>
-        <div class="search-result-price">${precioMostrar}</div>
+        <div class="search-result-price" style="display:flex; justify-content:space-between; gap:8px; align-items:center;">
+          <span>${precioMostrar}</span>
+          <span style="font-size: 11px;">${inventarioMostrar}</span>
+        </div>
       </div>
     `;
   }).join('');
