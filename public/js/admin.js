@@ -1258,15 +1258,25 @@ async function importListaCompleta() {
       let precioColPADSinIva = null;
       let precioColUnitario = null;
       
+      // Primera pasada: coincidencia EXACTA (evita que "nuevo SKU" o "Codigo de barra"
+      // pisen a la columna real "sku"/"codigo")
       headerRow.forEach((header, idx) => {
         const hNorm = norm(header);
-        if (hNorm.includes("codigo") || hNorm.includes("sku") || hNorm.includes("clave")) codigoCol = idx;
-        if (hNorm.includes("descripcion") || hNorm.includes("producto") || hNorm.includes("nombre")) descCol = idx;
-        if ((hNorm.includes("costo") && hNorm.includes("unitario")) || (hNorm.includes("precio") && hNorm.includes("unitario")) || hNorm === "unitario") {
+        if (hNorm === "sku" || hNorm === "codigo" || hNorm === "clave") codigoCol = idx;
+        if (hNorm === "nombre" || hNorm === "descripcion" || hNorm === "producto") descCol = idx;
+        if (hNorm === "costo unitario" || hNorm === "precio unitario" || hNorm === "unitario") precioColUnitario = idx;
+      });
+
+      // Segunda pasada: respaldo con .includes() SOLO para lo que no se encontró exacto
+      headerRow.forEach((header, idx) => {
+        const hNorm = norm(header);
+        if (codigoCol === null && (hNorm.includes("codigo") || hNorm.includes("sku") || hNorm.includes("clave"))) codigoCol = idx;
+        if (descCol === null && (hNorm.includes("descripcion") || hNorm.includes("producto") || hNorm.includes("nombre"))) descCol = idx;
+        if (precioColUnitario === null && ((hNorm.includes("costo") && hNorm.includes("unitario")) || (hNorm.includes("precio") && hNorm.includes("unitario")) || hNorm === "unitario")) {
           precioColUnitario = idx;
         }
-        if (hNorm.includes("pad") && hNorm.includes("con") && hNorm.includes("iva")) precioColPADConIva = idx;
-        if (hNorm.includes("pad") && hNorm.includes("sin") && hNorm.includes("iva")) precioColPADSinIva = idx;
+        if (precioColPADConIva === null && hNorm.includes("pad") && hNorm.includes("con") && hNorm.includes("iva")) precioColPADConIva = idx;
+        if (precioColPADSinIva === null && hNorm.includes("pad") && hNorm.includes("sin") && hNorm.includes("iva")) precioColPADSinIva = idx;
       });
       
       console.log(`📌 Columnas detectadas: codigo=${codigoCol}, descripcion=${descCol}, costo unitario=${precioColUnitario}, pad con iva=${precioColPADConIva}, pad sin iva=${precioColPADSinIva}`);
