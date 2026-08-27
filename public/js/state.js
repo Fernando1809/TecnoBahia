@@ -26,6 +26,9 @@ const state = {
   pedidoTemplateName: null,
   inventoryOrigin: null,
   inventoryLoaded: false,
+  // SKUs que el usuario eliminó manualmente de la tabla (bulkDeleteSelectedProducts).
+  // recalculateRows() los respeta en cada recálculo para que no reaparezcan.
+  excludedSKUs: [],
   currentView: "report",
   darkMode: false,
   bulkSelection: {

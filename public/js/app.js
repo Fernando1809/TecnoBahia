@@ -36,6 +36,7 @@ function handleFile(e) {
       
       state.inventoryOrigin = detectInventoryOrigin(workbook, file.name);
       state.inventoryLoaded = true;
+      state.excludedSKUs = []; // nuevo inventario cargado: limpiar purgas de la sesión anterior
 
       // ✅ Detectar la sucursal (Jiquilisco/Usulután) y activar su archivo de reglas min/max
       if (state.inventoryOrigin && typeof activarSucursal === "function") {
@@ -240,12 +241,25 @@ function exportResults() {
   
   XLSX.writeFile(wb, nombreArchivo, { bookType: "xlsx", cellDates: true });
 
-  if (typeof guardarMemoriaPedidoActual === "function") {
-    guardarMemoriaPedidoActual(sucursalPedido, productsToOrder);
-  }
+  // Preguntar al usuario si desea guardar este pedido en la memoria (para
+  // compararlo con el próximo). Se guarda EXACTAMENTE productsToOrder, que es
+  // la misma lista que se acaba de escribir en el Excel (ya refleja las
+  // cantidades editadas y los productos quitados de la tabla).
+  const deseaGuardar = confirm(
+    `¿Deseas guardar este pedido en la memoria de ${sucursalPedido}?\n\n` +
+    `Se guardarán los ${productsToOrder.length} productos que quedaron en la tabla al momento de descargar.`
+  );
 
-  if (typeof loadPedidoMemoria === "function") {
-    loadPedidoMemoria().catch(err => console.warn("No se pudo refrescar el historial de pedidos:", err));
+  if (deseaGuardar) {
+    if (typeof guardarMemoriaPedidoActual === "function") {
+      guardarMemoriaPedidoActual(sucursalPedido, productsToOrder);
+    }
+
+    if (typeof loadPedidoMemoria === "function") {
+      loadPedidoMemoria().catch(err => console.warn("No se pudo refrescar el historial de pedidos:", err));
+    }
+  } else {
+    console.log("🕘 Usuario decidió NO guardar este pedido en la memoria.");
   }
   
   let filtroDescripcion = "";

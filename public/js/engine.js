@@ -106,6 +106,47 @@ function parseSheetWithAutoHeader(sheet) {
   return dataRows;
 }
 
+/**
+ * Busca el inventario REAL de un SKU directamente en state.rawJson (el archivo
+ * de inventario cargado), sumando todas las filas que coincidan. Se usa cuando
+ * se agrega/reagrega un producto manualmente al pedido y NO existe (o ya no
+ * existe, por ejemplo porque fue purgado) en state.rows, para no perder su
+ * existencia real y forzarla a 0 por error.
+ * Devuelve null si el SKU no aparece en el inventario cargado.
+ */
+function buscarInventarioRealPorSku(sku) {
+  if (!state.rawJson || !state.rawJson.length || !state.columnMap) return null;
+  const map = state.columnMap;
+  const skuKeyBuscado = normalizeSku(sku);
+
+  let inventario = 0;
+  let encontrado = false;
+
+  for (let i = 0; i < state.rawJson.length; i++) {
+    const r = state.rawJson[i];
+    if (!r) continue;
+
+    let skuFila = "";
+    if (r[map.SKU] !== undefined && r[map.SKU] !== null && r[map.SKU] !== "") {
+      skuFila = String(r[map.SKU]).trim();
+    }
+    if (!skuFila) continue;
+
+    if (normalizeSku(skuFila) !== skuKeyBuscado) continue;
+
+    encontrado = true;
+    let inv = 0;
+    if (r[map.Inventario] !== undefined && r[map.Inventario] !== null && r[map.Inventario] !== "") {
+      const numericValue = toNum(String(r[map.Inventario]).trim());
+      if (!isNaN(numericValue)) inv = numericValue;
+    }
+    if (inv < 0) inv = 0;
+    inventario += inv;
+  }
+
+  return encontrado ? inventario : null;
+}
+
 function recalculateRows() {
   console.log("🔄 Recalculando filas...");
 
@@ -381,11 +422,14 @@ function recalculateRows() {
       // Buscar si ya existe en rows
       const existingIndex = state.rows.findIndex(r => r.SKU === manual.SKU);
       if (existingIndex !== -1) {
-        // Reemplazar el calculado con el manual (FORZAR inventario 0)
+        // Reemplazar el calculado con el manual, pero conservando el
+        // inventario que ya tenía guardado (puede ser real, tomado del
+        // archivo al agregarlo, o 0 si de verdad no existe en el inventario).
+        // Antes esto forzaba Inventario:0 siempre, borrando la existencia
+        // real de productos re-agregados tras haber sido purgados por error.
         state.rows[existingIndex] = {
           ...state.rows[existingIndex],
           ...manual,
-          Inventario: 0, // Siempre 0 para manuales
           _manual: true
         };
         console.log(`🔄 Producto manual preservado: ${manual.SKU}`);
@@ -395,6 +439,16 @@ function recalculateRows() {
         console.log(`➕ Producto manual agregado: ${manual.SKU}`);
       }
     });
+  }
+
+  // RESPETAR PRODUCTOS ELIMINADOS MANUALMENTE (purga)
+  // Va DESPUÉS de reinsertar los manuales: si un producto manual también
+  // fue purgado, debe quedar fuera igual, no reaparecer.
+  if (state.excludedSKUs && state.excludedSKUs.length > 0) {
+    const excludedSet = new Set(state.excludedSKUs);
+    const antes = state.rows.length;
+    state.rows = state.rows.filter(r => !excludedSet.has(r.SKU));
+    console.log(`🚫 Productos purgados respetados tras recalcular: ${antes - state.rows.length}`);
   }
 
   // Mostrar los primeros 5 productos como ejemplo

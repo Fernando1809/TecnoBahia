@@ -130,11 +130,11 @@ async function firestoreGetDocData(name) {
   }
 }
 
-async function firestoreSetDocData(name, data) {
+async function firestoreSetDocData(name, data, merge = true) {
   if (!window.db || !window.setDoc) return;
   try {
     const ref = getFirestoreDocRef(name);
-    await window.setDoc(ref, data, { merge: true });
+    await window.setDoc(ref, data, { merge: merge });
   } catch (err) {
     console.error("Error guardando en Firestore:", err);
   }
@@ -543,7 +543,10 @@ async function guardarMemoriaPedidoActual(sucursal, productsToOrder) {
   state.pedidoMemoriaPorSucursal[sucursal] = memoria;
 
   try {
-    await firestoreSetDocData(`pedidoMemoria_${slugSucursal(sucursal)}`, memoria);
+    // merge:false -> REEMPLAZA el documento completo. Con merge:true, Firestore
+    // fusiona el mapa "cantidades" y los SKUs de pedidos anteriores nunca se
+    // borran, se van acumulando pedido tras pedido.
+    await firestoreSetDocData(`pedidoMemoria_${slugSucursal(sucursal)}`, memoria, false);
     console.log(`💾 Memoria de pedido guardada (${sucursal}): ${skus.length} SKUs con cantidades`);
   } catch (err) {
     console.error("❌ Error guardando memoria de pedido:", err);

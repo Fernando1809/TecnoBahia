@@ -144,6 +144,14 @@ function bulkDeleteSelectedProducts() {
 
   const skuSet = new Set(selectedSKUs);
   state.rows = state.rows.filter(item => !skuSet.has(item.SKU));
+
+  // Registrar como excluidos para que sobrevivan a un recalculateRows() posterior
+  // (editar una regla, confirmar un SKU, cargar precios, etc. ya no los revive)
+  if (!state.excludedSKUs) state.excludedSKUs = [];
+  selectedSKUs.forEach(sku => {
+    if (!state.excludedSKUs.includes(sku)) state.excludedSKUs.push(sku);
+  });
+
   clearBulkSelection();
 
   if (typeof updateMetrics === "function") updateMetrics(state.rows);
@@ -1018,12 +1026,17 @@ function searchProductsInListaCompleta(searchTerm) {
       
       if (matches && !resultsMap.has(sku)) {
         const precio = (state.preciosLookup && state.preciosLookup[sku]) ? state.preciosLookup[sku] : 0;
-        // Buscar si este SKU ya tiene inventario real cargado
+        // Buscar el inventario real: primero en state.rows (si ya está en la
+        // tabla), y si no, directamente en el archivo cargado (rawJson) —
+        // así un producto purgado sigue mostrando su existencia real aquí.
         const skuKey = normalizeSku(sku);
         const rowExistente = (state.rows || []).find(r => normalizeSku(r.SKU) === skuKey);
-        const inventario = rowExistente && rowExistente.Inventario !== undefined && rowExistente.Inventario !== null
+        let inventario = rowExistente && rowExistente.Inventario !== undefined && rowExistente.Inventario !== null
           ? Number(rowExistente.Inventario)
           : null;
+        if (inventario === null && typeof buscarInventarioRealPorSku === "function") {
+          inventario = buscarInventarioRealPorSku(sku);
+        }
         resultsMap.set(sku, {
           SKU: sku,
           Producto: state.adminRules[sku].producto || sku,
@@ -1183,16 +1196,37 @@ function addProductToPedido() {
     if (typeof persistRules === "function") persistRules();
   }
   
-  // 3. Agregar o actualizar en state.rows MANUALMENTE (FORZANDO INVENTARIO A 0)
+  // 3. Agregar o actualizar en state.rows MANUALMENTE
   if (!state.rows) state.rows = [];
-  
+
+  // Si este SKU había sido purgado (eliminado) antes, se está agregando de
+  // nuevo a propósito: sacarlo de la lista de excluidos para que no vuelva
+  // a desaparecer en el próximo recalculateRows().
+  if (state.excludedSKUs && state.excludedSKUs.length) {
+    state.excludedSKUs = state.excludedSKUs.filter(s => normalizeSku(s) !== normalizeSku(sku));
+  }
+
   const skuKey = normalizeSku(sku);
   const existingRow = state.rows.find(r => normalizeSku(r.SKU) === skuKey);
-  
+
+  // Buscar el inventario REAL en el archivo de inventario cargado. Cubre tanto
+  // un SKU que nunca estuvo en la tabla como uno que se quitó por error y se
+  // vuelve a agregar: en ambos casos debe tomar la existencia real, no 0.
+  const inventarioDesdeArchivo = (typeof buscarInventarioRealPorSku === "function")
+    ? buscarInventarioRealPorSku(sku)
+    : null;
+  // Se usa solo para elegir el valor de Inventario (0 si de verdad no existe
+  // en el archivo). El indicador "Agregado manual" de la tabla se marca
+  // SIEMPRE que el producto se añade por este modal, tenga o no inventario
+  // real, ya que engine.js ya no le fuerza el inventario a 0 por estar
+  // marcado como manual.
+
   if (existingRow) {
-    const inventarioReal = existingRow.Inventario !== undefined && existingRow.Inventario !== null && existingRow.Inventario !== ""
-      ? Number(existingRow.Inventario)
-      : 0;
+    const inventarioReal = inventarioDesdeArchivo !== null
+      ? inventarioDesdeArchivo
+      : (existingRow.Inventario !== undefined && existingRow.Inventario !== null && existingRow.Inventario !== ""
+          ? Number(existingRow.Inventario)
+          : 0);
 
     existingRow.PedidoSugerido = cantidad;
     existingRow.CostoTotal = precio * cantidad;
@@ -1208,11 +1242,12 @@ function addProductToPedido() {
     existingRow._manual = true;
     console.log("✏️ Producto actualizado conservando inventario real:", existingRow);
   } else {
-    // AGREGAR NUEVO - iniciar sin inventario real conocido
+    // AGREGAR NUEVO - usa el inventario real del archivo si el SKU existe ahí;
+    // solo cae a 0 si de verdad no aparece en el inventario cargado.
     const newRow = {
       SKU: sku.toUpperCase(),
       Producto: producto,
-      Inventario: 0,
+      Inventario: inventarioDesdeArchivo !== null ? inventarioDesdeArchivo : 0,
       CostoUnitario: precio,
       Minimo: state.adminRules[sku]?.minimo ?? 0,
       Maximo: state.adminRules[sku]?.maximo ?? cantidad,
@@ -1221,10 +1256,12 @@ function addProductToPedido() {
       CostoTotal: precio * cantidad,
       Exceso: 0,
       Estado: "PEDIR",
-      _manual: true // Marcar como agregado manualmente
+      _manual: true // Siempre marcado: se agregó por el modal de "Agregar producto"
     };
     state.rows.push(newRow);
-    console.log("➕ Nuevo producto agregado (FORZADO inventario 0):", newRow);
+    console.log(inventarioDesdeArchivo !== null
+      ? "➕ Producto re-agregado con inventario real tomado del archivo:"
+      : "➕ Nuevo producto agregado (no existe en inventario cargado, inventario=0):", newRow);
   }
   
   console.log("📊 Total products en state.rows:", state.rows.length);
