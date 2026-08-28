@@ -924,19 +924,31 @@ function importRulesExcel(sucursal) {
           producto = String(row[prodCol]).trim();
         }
         
-        let minimo = null;
-        if (row[minCol] !== undefined && row[minCol] !== null && row[minCol] !== "") {
-          const minVal = String(row[minCol]).trim().replace(/,/g, ".");
-          if (minVal !== "" && !isNaN(Number(minVal)) && Number(minVal) >= 0) {
-            minimo = Number(minVal);
+        // minimo/maximo: null = "celda vacía en el Excel" -> borrar la regla existente.
+        // undefined = "columna no existe o valor no numérico" -> no tocar lo que ya había.
+        let minimo = undefined;
+        if (row[minCol] !== undefined && row[minCol] !== null) {
+          const minRaw = String(row[minCol]).trim();
+          if (minRaw === "") {
+            minimo = null;
+          } else {
+            const minVal = minRaw.replace(/,/g, ".");
+            if (!isNaN(Number(minVal)) && Number(minVal) >= 0) {
+              minimo = Number(minVal);
+            }
           }
         }
         
-        let maximo = null;
-        if (row[maxCol] !== undefined && row[maxCol] !== null && row[maxCol] !== "") {
-          const maxVal = String(row[maxCol]).trim().replace(/,/g, ".");
-          if (maxVal !== "" && !isNaN(Number(maxVal)) && Number(maxVal) >= 0) {
-            maximo = Number(maxVal);
+        let maximo = undefined;
+        if (row[maxCol] !== undefined && row[maxCol] !== null) {
+          const maxRaw = String(row[maxCol]).trim();
+          if (maxRaw === "") {
+            maximo = null;
+          } else {
+            const maxVal = maxRaw.replace(/,/g, ".");
+            if (!isNaN(Number(maxVal)) && Number(maxVal) >= 0) {
+              maximo = Number(maxVal);
+            }
           }
         }
         
@@ -952,10 +964,16 @@ function importRulesExcel(sucursal) {
           if (producto) {
             state.adminRules[sku].producto = producto;
           }
-          if (minimo !== null && !isNaN(minimo)) {
+          // minimo === null -> celda vacía en el Excel: la regla se pone en 0.
+          // minimo es número -> actualizar. minimo === undefined -> no tocar.
+          if (minimo === null) {
+            state.adminRules[sku].minimo = 0;
+          } else if (minimo !== undefined && !isNaN(minimo)) {
             state.adminRules[sku].minimo = minimo;
           }
-          if (maximo !== null && !isNaN(maximo)) {
+          if (maximo === null) {
+            state.adminRules[sku].maximo = 0;
+          } else if (maximo !== undefined && !isNaN(maximo)) {
             state.adminRules[sku].maximo = maximo;
           }
           if (confirmado !== null) {
@@ -964,8 +982,8 @@ function importRulesExcel(sucursal) {
           actualizados++;
         } else {
           state.adminRules[sku] = {
-            minimo: (minimo !== null && !isNaN(minimo)) ? minimo : "",
-            maximo: (maximo !== null && !isNaN(maximo)) ? maximo : "",
+            minimo: (minimo !== undefined && !isNaN(minimo)) ? (minimo === null ? 0 : minimo) : "",
+            maximo: (maximo !== undefined && !isNaN(maximo)) ? (maximo === null ? 0 : maximo) : "",
             producto: producto || sku,
             confirmado: confirmado || false
           };
