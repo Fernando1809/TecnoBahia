@@ -1,0 +1,14 @@
+CONSOLIDADOR TECNO BAHIA
+
+PARA EJECUTAR EL AUXILIAR:
+1. Descomprima completamente este archivo ZIP.
+2. Abra con doble clic el archivo ABRIR-ESTO.html que está en esta misma carpeta.
+3. No necesita instalar nada ni usar archivos .bat.
+
+PARA REVISAR LA LOGICA Y LAS FORMULAS:
+Abra la carpeta codigo-fuente.
+El archivo principal es:
+codigo-fuente/src/lib/consolidador.ts
+
+La carpeta codigo-fuente conserva por separado la pantalla, los estilos,
+las plantillas integradas, los logotipos, la lógica y la configuración.
