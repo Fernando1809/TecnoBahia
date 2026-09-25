@@ -122,7 +122,7 @@ function handleFile(e) {
   reader.readAsArrayBuffer(file);
 }
 
-function exportResults() {
+async function exportResults() {
   if (!state.rows || !state.rows.length) {
     setStatus("Carga el inventario primero.", true);
     return;
@@ -239,28 +239,16 @@ function exportResults() {
   console.log("📦 Productos incluidos:", productsToOrder.length);
   console.log("🎯 Filtro aplicado - includeZero:", window.inventoryPedidoFilter.includeZero, "includeAtMin:", window.inventoryPedidoFilter.includeAtMin);
   
-  XLSX.writeFile(wb, nombreArchivo, { bookType: "xlsx", cellDates: true });
-
-  // Preguntar al usuario si desea guardar este pedido en la memoria (para
-  // compararlo con el próximo). Se guarda EXACTAMENTE productsToOrder, que es
-  // la misma lista que se acaba de escribir en el Excel (ya refleja las
-  // cantidades editadas y los productos quitados de la tabla).
-  const deseaGuardar = confirm(
-    `¿Deseas guardar este pedido en la memoria de ${sucursalPedido}?\n\n` +
-    `Se guardarán los ${productsToOrder.length} productos que quedaron en la tabla al momento de descargar.`
+  const esAgregado = confirm(
+    `¿Este pedido es un agregado al pedido anterior de ${sucursalPedido}?\n\n` +
+    `Aceptar: agregar los productos y sumar cantidades repetidas.\n` +
+    `Cancelar: pedido nuevo; reemplazar el pedido anterior.`
   );
+  const tipoPedido = esAgregado ? "agregado" : "nuevo";
+  const memoriaGuardada = await guardarMemoriaPedidoActual(sucursalPedido, productsToOrder, tipoPedido);
+  if (!memoriaGuardada) return;
 
-  if (deseaGuardar) {
-    if (typeof guardarMemoriaPedidoActual === "function") {
-      guardarMemoriaPedidoActual(sucursalPedido, productsToOrder);
-    }
-
-    if (typeof loadPedidoMemoria === "function") {
-      loadPedidoMemoria().catch(err => console.warn("No se pudo refrescar el historial de pedidos:", err));
-    }
-  } else {
-    console.log("🕘 Usuario decidió NO guardar este pedido en la memoria.");
-  }
+  XLSX.writeFile(wb, nombreArchivo, { bookType: "xlsx", cellDates: true });
   
   let filtroDescripcion = "";
   if (window.inventoryPedidoFilter.includeZero && window.inventoryPedidoFilter.includeAtMin) {

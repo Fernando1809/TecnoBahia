@@ -16,8 +16,8 @@
   <script src="js/utils.js?v=2"></script>
   <script src="js/engine.js?v=2"></script>    
   <script src="js/ui.js?v=3"></script>
-  <script src="js/admin.js?v=2"></script>
-  <script src="js/app.js?v=2"></script> 
+  <script src="js/admin.js?v=6"></script>
+  <script src="js/app.js?v=3"></script>
 </head>
 <body>
   <div class="corner-menu" aria-label="Menú principal">
@@ -199,7 +199,6 @@
         <!-- ACCIONES ADMIN                                                -->
         <!-- ============================================================ -->
         <div class="admin-actions" style="margin-bottom: 16px;">
-          <button id="btnSaveRules" class="btn-secondary">💾 Guardar reglas</button>
           <button id="btnClearRules" class="btn-secondary">🗑️ Limpiar SOLO reglas</button>
           <button id="btnClearAllItems" class="btn-secondary" style="background: #dc2626; color: white;">🔥 ELIMINAR TODOS LOS SKUs</button>
         </div>
@@ -250,11 +249,11 @@
         </div>
 
         <div class="row admin-tools" id="uploadJiquiliscoRow">
-          <input type="file" id="adminExcelInputJiquilisco" accept=".xlsx,.xls" />
+          <input type="file" id="adminExcelInputJiquilisco" accept=".xlsx,.xls,.csv" />
           <button id="btnImportExcelJiquilisco" class="btn-secondary">📋 Importar reglas KOLO — Jiquilisco</button>
         </div>
         <div class="row admin-tools" id="uploadUsulutanRow">
-          <input type="file" id="adminExcelInputUsulutan" accept=".xlsx,.xls" />
+          <input type="file" id="adminExcelInputUsulutan" accept=".xlsx,.xls,.csv" />
           <button id="btnImportExcelUsulutan" class="btn-secondary">📋 Importar reglas KOLO — Usulután</button>
         </div>
         <div class="row admin-tools">
@@ -418,7 +417,6 @@
     document.getElementById("searchInput")?.addEventListener("input", () => applyFilterAndSearch());
     document.getElementById("btnExport")?.addEventListener("click", exportResults);
     document.getElementById("adminSearchInput")?.addEventListener("input", () => applyAdminFilter());
-    document.getElementById("btnSaveRules")?.addEventListener("click", saveRulesFromInputs);
     document.getElementById("btnClearRules")?.addEventListener("click", clearAllRules);
     document.getElementById("btnIngresar")?.addEventListener("click", unlockAdminPanel);
     document.getElementById("btnImportExcelJiquilisco")?.addEventListener("click", () => importRulesExcel("Jiquilisco"));

@@ -130,13 +130,22 @@ async function firestoreGetDocData(name) {
   }
 }
 
+async function firestoreGetDocDataStrict(name) {
+  if (!window.db || !window.getDoc) throw new Error("Firestore no está inicializado");
+  const ref = getFirestoreDocRef(name);
+  const snap = await window.getDoc(ref);
+  return snap.exists() ? snap.data() : {};
+}
+
 async function firestoreSetDocData(name, data, merge = true) {
-  if (!window.db || !window.setDoc) return;
+  if (!window.db || !window.setDoc) return false;
   try {
     const ref = getFirestoreDocRef(name);
     await window.setDoc(ref, data, { merge: merge });
+    return true;
   } catch (err) {
     console.error("Error guardando en Firestore:", err);
+    return false;
   }
 }
 
@@ -325,7 +334,19 @@ async function loadRules() {
     for (const sucursal of SUCURSALES) {
       const slug = slugSucursal(sucursal);
       const data = await firestoreGetDocData(`adminRules_${slug}`);
-      state.adminRulesPorSucursal[sucursal] = data.adminRules || {};
+      if (data.chunked === true) {
+        const generation = data.chunkGeneration === "b" ? "b" : "a";
+        const chunkCount = Math.max(0, Number(data.chunkCount) || 0);
+        const chunks = await Promise.all(Array.from({ length: chunkCount }, (_, index) =>
+          firestoreGetDocData(`adminRules_${slug}_${generation}_${index}`)
+        ));
+        if (chunks.some(chunk => !chunk.adminRules)) {
+          throw new Error(`Faltan fragmentos de reglas para ${sucursal}`);
+        }
+        state.adminRulesPorSucursal[sucursal] = Object.assign({}, ...chunks.map(chunk => chunk.adminRules));
+      } else {
+        state.adminRulesPorSucursal[sucursal] = data.adminRules || {};
+      }
 
       const metadata = await firestoreGetDocData(`reglasMetadata_${slug}`);
       state.reglasMeta[sucursal] = metadata && metadata.lastUpdate ? metadata : null;
@@ -420,6 +441,8 @@ function onSucursalSelectorChange(nombre) {
 async function persistRules() {
   const sucursal = state.sucursalActiva || "Jiquilisco";
   const slug = slugSucursal(sucursal);
+  const rulesDocName = `adminRules_${slug}`;
+  const chunkSize = 250;
 
   const rulesWithValues = {};
   for (const sku in state.adminRules) {
@@ -435,11 +458,35 @@ async function persistRules() {
   console.log(`💾 Total SKUs en memoria: ${Object.keys(state.adminRules).length}`);
   
   try {
-    await firestoreSetDocData(`adminRules_${slug}`, { adminRules: rulesWithValues });
+    const currentManifest = await firestoreGetDocDataStrict(rulesDocName);
+    const chunkGeneration = currentManifest.chunked === true && currentManifest.chunkGeneration === "a" ? "b" : "a";
+    const entries = Object.entries(rulesWithValues);
+    const chunks = [];
+
+    for (let offset = 0; offset < entries.length; offset += chunkSize) {
+      chunks.push(Object.fromEntries(entries.slice(offset, offset + chunkSize)));
+    }
+
+    const chunkResults = await Promise.all(chunks.map((chunk, index) =>
+      firestoreSetDocData(`adminRules_${slug}_${chunkGeneration}_${index}`, { adminRules: chunk }, false)
+    ));
+    if (chunkResults.some(saved => !saved)) throw new Error("Firestore no confirmó el guardado de todos los fragmentos");
+
+    const manifestSaved = await firestoreSetDocData(rulesDocName, {
+      chunked: true,
+      chunkGeneration,
+      chunkCount: chunks.length,
+      totalCount: entries.length
+    }, false);
+    if (!manifestSaved) throw new Error("Firestore no confirmó el manifiesto de reglas");
+
     state.adminRulesPorSucursal[sucursal] = state.adminRules;
-    console.log(`✅ Reglas guardadas en Firestore (${sucursal})`);
+    console.log(`✅ Reglas guardadas en Firestore (${sucursal}): ${entries.length} SKUs en ${chunks.length} fragmentos`);
+    return true;
   } catch (err) {
     console.error("❌ Error guardando en Firestore:", err);
+    setStatus(`❌ No se pudieron guardar las reglas de ${sucursal} en Firebase. Revisa tu conexión e inténtalo de nuevo.`, true);
+    return false;
   }
 }
 
@@ -518,16 +565,21 @@ function mostrarMemoriaPedidoAnterior(sucursal) {
 }
 
 /**
- * Guarda en memoria (state + Firestore) los SKUs del pedido recién generado
- * para esta sucursal, reemplazando la memoria anterior.
- * Ahora también guarda las cantidades (PedidoSugerido) de cada SKU.
+ * Guarda en memoria (state + Firestore) el pedido nuevo o lo acumula al anterior.
  */
-async function guardarMemoriaPedidoActual(sucursal, productsToOrder) {
-  // Crear objeto con SKU: cantidad
+async function guardarMemoriaPedidoActual(sucursal, productsToOrder, tipoPedido = "nuevo") {
   const cantidadPorSKU = {};
+
+  if (tipoPedido === "agregado") {
+    getPedidoAnteriorSet(sucursal).forEach((cantidad, sku) => {
+      cantidadPorSKU[sku] = Number(cantidad) || 0;
+    });
+  }
+
   (productsToOrder || []).forEach(p => {
     if (p.SKU) {
-      cantidadPorSKU[String(p.SKU).trim().toUpperCase()] = p.PedidoSugerido || 0;
+      const sku = String(p.SKU).trim().toUpperCase();
+      cantidadPorSKU[sku] = (Number(cantidadPorSKU[sku]) || 0) + (Number(p.PedidoSugerido) || 0);
     }
   });
 
@@ -535,21 +587,21 @@ async function guardarMemoriaPedidoActual(sucursal, productsToOrder) {
   const memoria = {
     fecha: new Date().toISOString(),
     skus: skus,
-    cantidades: cantidadPorSKU,  // NUEVO: guardar cantidades por SKU
+    cantidades: cantidadPorSKU,
     totalItems: skus.length
   };
 
-  if (!state.pedidoMemoriaPorSucursal) state.pedidoMemoriaPorSucursal = {};
-  state.pedidoMemoriaPorSucursal[sucursal] = memoria;
-
   try {
-    // merge:false -> REEMPLAZA el documento completo. Con merge:true, Firestore
-    // fusiona el mapa "cantidades" y los SKUs de pedidos anteriores nunca se
-    // borran, se van acumulando pedido tras pedido.
-    await firestoreSetDocData(`pedidoMemoria_${slugSucursal(sucursal)}`, memoria, false);
-    console.log(`💾 Memoria de pedido guardada (${sucursal}): ${skus.length} SKUs con cantidades`);
+    const saved = await firestoreSetDocData(`pedidoMemoria_${slugSucursal(sucursal)}`, memoria, false);
+    if (!saved) throw new Error("Firestore no confirmó el guardado de la memoria del pedido");
+    if (!state.pedidoMemoriaPorSucursal) state.pedidoMemoriaPorSucursal = {};
+    state.pedidoMemoriaPorSucursal[sucursal] = memoria;
+    console.log(`💾 Memoria de pedido guardada (${sucursal}, ${tipoPedido}): ${skus.length} SKUs con cantidades`);
+    return true;
   } catch (err) {
     console.error("❌ Error guardando memoria de pedido:", err);
+    setStatus(`❌ No se pudo guardar el pedido de ${sucursal} en Firebase. No se generó el archivo.`, true);
+    return false;
   }
 }
 
@@ -650,7 +702,7 @@ function applyAdminFilter() {
   updateReglasStatusDisplay();
 }
 
-function saveRulesFromInputs() {
+async function saveRulesFromInputs() {
   if (!state.adminUnlocked) return;
   const inputs = Array.from(document.querySelectorAll("#adminTable tbody input[type='number']"));
   const nextRules = { ...state.adminRules };
@@ -672,7 +724,8 @@ function saveRulesFromInputs() {
   
   state.adminRules = nextRules;
   state.adminRulesPorSucursal[state.sucursalActiva || "Jiquilisco"] = nextRules;
-  persistRules();
+  const saved = await persistRules();
+  if (!saved) return;
   recalculateRows();
   applyAdminFilter();
   
@@ -688,14 +741,15 @@ function saveRulesFromInputs() {
   setStatus(`✅ Reglas guardadas correctamente (${sucursal})`, false);
 }
 
-function clearAllRules() {
+async function clearAllRules() {
   if (!state.adminUnlocked) return;
   if (confirm("⚠️ ¿Eliminar SOLO las reglas de mínimos y máximos?\n\nLos SKUs seguirán apareciendo, solo se eliminarán los valores de mínimo y máximo.")) {
     for (const sku in state.adminRules) {
       state.adminRules[sku].minimo = "";
       state.adminRules[sku].maximo = "";
     }
-    persistRules();
+    const saved = await persistRules();
+    if (!saved) return;
     recalculateRows();
     applyAdminFilter();
     
@@ -821,6 +875,52 @@ function addNewSku() {
 // FUNCIÓN CORREGIDA: IMPORTAR REGLAS - ACTUALIZA NOMBRES
 // ============================================================
 
+function parseRulesCsv(text, delimiter) {
+  const records = [];
+  let cells = [];
+  let field = "";
+  let quoted = false;
+  let trailingDelimiter = false;
+
+  for (let index = 0; index < text.length; index++) {
+    const character = text[index];
+
+    if (quoted) {
+      if (character === '"' && text[index + 1] === '"') {
+        field += '"';
+        index++;
+      } else if (character === '"') {
+        quoted = false;
+      } else {
+        field += character;
+      }
+    } else if (character === '"' && field === "") {
+      quoted = true;
+    } else if (character === delimiter) {
+      cells.push(field);
+      field = "";
+      trailingDelimiter = true;
+    } else if (character === "\r" || character === "\n") {
+      cells.push(field);
+      records.push({ cells, trailingDelimiter });
+      cells = [];
+      field = "";
+      trailingDelimiter = false;
+      if (character === "\r" && text[index + 1] === "\n") index++;
+    } else {
+      field += character;
+      trailingDelimiter = false;
+    }
+  }
+
+  if (field !== "" || cells.length > 0) {
+    cells.push(field);
+    records.push({ cells, trailingDelimiter });
+  }
+
+  return records;
+}
+
 function importRulesExcel(sucursal) {
   if (!state.adminUnlocked) {
     alert("Debes iniciar sesión como administrador");
@@ -843,11 +943,23 @@ function importRulesExcel(sucursal) {
   reader.onload = async function(evt) {
     try {
       let workbook;
-      const data = new Uint8Array(evt.target.result);
-      workbook = XLSX.read(data, { type: 'array' });
-      
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+      const isCsv = file.name.toLowerCase().endsWith('.csv');
+      let rows;
+      let csvDelimiter = ",";
+      if (isCsv) {
+        let text = new TextDecoder("utf-8").decode(new Uint8Array(evt.target.result)).replace(/^\uFEFF/, "");
+        const separatorDirective = text.match(/^sep=(.)\r?\n/i);
+        if (separatorDirective) {
+          csvDelimiter = separatorDirective[1];
+          text = text.slice(separatorDirective[0].length);
+        }
+        rows = parseRulesCsv(text, csvDelimiter);
+      } else {
+        const data = new Uint8Array(evt.target.result);
+        workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+      }
       
       if (!rows || rows.length < 2) {
         alert("El archivo no tiene datos");
@@ -858,7 +970,7 @@ function importRulesExcel(sucursal) {
       console.log("📋 Archivo cargado. Total filas:", rows.length);
       
       // DETECCIÓN AUTOMÁTICA DE COLUMNAS
-      const headerRow = rows[0] || [];
+      const headerRow = isCsv ? (rows[0]?.cells || []) : (rows[0] || []);
       console.log("📋 Encabezados encontrados:", headerRow);
       
       let skuCol = -1;
@@ -906,7 +1018,20 @@ function importRulesExcel(sucursal) {
       let errores = [];
       
       for (let i = 1; i < rows.length; i++) {
-        const row = rows[i];
+        let row = isCsv ? rows[i].cells.slice() : rows[i];
+        if (isCsv) {
+          if (rows[i].trailingDelimiter) row.pop();
+          const shiftedColumns = row.length - headerRow.length;
+          if (shiftedColumns > 0) {
+            const productEnd = minCol + shiftedColumns;
+            row[prodCol] = row.slice(prodCol, productEnd).join(csvDelimiter).trim();
+            row[minCol] = row[minCol + shiftedColumns];
+            row[maxCol] = row[maxCol + shiftedColumns];
+            if (confirmadoCol !== -1) {
+              row[confirmadoCol] = row[confirmadoCol + shiftedColumns];
+            }
+          }
+        }
         if (!row) continue;
         
         const tieneDatos = row.some(cell => String(cell || "").trim() !== "");
@@ -1000,7 +1125,8 @@ function importRulesExcel(sucursal) {
       console.log(`✅ Total procesados: ${importedCount} SKUs`);
       console.log(`📊 Nuevos: ${nuevos}, Actualizados: ${actualizados}`);
       
-      await persistRules();
+      const saved = await persistRules();
+      if (!saved) throw new Error("No se pudieron guardar las reglas en Firebase");
       
       for (const sku in state.adminRules) {
         if (!state.listaCompleta.some(item => item.CODIGO === sku)) {
@@ -1865,6 +1991,10 @@ function renderAdminTable(data) {
   });
 
   // Evento: Guardar nombre al perder el foco o presionar Enter
+  document.querySelectorAll("#adminTable tbody input[type='number']").forEach(input => {
+    input.addEventListener('change', saveRulesFromInputs);
+  });
+
   document.querySelectorAll('.producto-edit-input').forEach(input => {
     input.addEventListener('blur', function(e) {
       guardarNombreProducto(this);

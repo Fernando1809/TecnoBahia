@@ -47,5 +47,11 @@
   //   },
   // ]
   "indexes": [],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "auxiliar-inventario",
+      "fieldPath": "adminRules",
+      "indexes": []
+    }
+  ]
 }
