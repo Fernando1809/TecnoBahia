@@ -542,10 +542,10 @@ function renderTableDynamic(data, filterType) {
           displayValue = baseValue;
         }
       }
-      else if (col.key === "PedidoSugerido" && r.PedidoSugerido > 0) {
+      else if (col.key === "PedidoSugerido" && (r.PedidoSugerido > 0 || r.PedidoSugerido === "")) {
         className = "tag-danger";
         displayValue = `<input type="number" class="pedido-sugerido-input" data-sku="${escapeHtml(r.SKU)}" 
-          value="${Math.max(0, Number(r.PedidoSugerido))}" min="0" step="1"
+          value="${r.PedidoSugerido === "" ? "" : Math.max(0, Number(r.PedidoSugerido))}" min="0" step="1"
           style="width:80px; padding:4px; border:1px solid var(--border); border-radius:6px; text-align: center;" />`;
       } 
       else if (col.key === "CostoUnitario") {
@@ -611,6 +611,8 @@ function renderTableDynamic(data, filterType) {
   tbody.querySelectorAll('.pedido-sugerido-input').forEach(input => {
     input.removeEventListener('input', handlePedidoSugeridoChange);
     input.addEventListener('input', handlePedidoSugeridoChange);
+    input.removeEventListener('change', handlePedidoSugeridoCommit);
+    input.addEventListener('change', handlePedidoSugeridoCommit);
     
     input.addEventListener('keydown', function(e) {
       e.stopPropagation();
@@ -789,28 +791,39 @@ function handlePedidoSugeridoChange(event) {
   const sku = input.getAttribute('data-sku');
   if (!sku) return;
 
-  let value = parseInt(input.value, 10);
-  if (isNaN(value)) value = 0;
-  value = Math.max(0, value);
-  
   const row = state.rows.find(r => r.SKU === sku);
   if (!row) return;
 
-  row.PedidoSugerido = value;
-  row.CostoTotal = (row.CostoUnitario && row.CostoUnitario !== null && row.CostoUnitario > 0) ? row.PedidoSugerido * row.CostoUnitario : "";
-
-  if (row.PedidoSugerido > 0) {
-    row.Estado = 'PEDIR';
-  } else if (row.Exceso > 0) {
-    row.Estado = 'EXCESO';
-  } else if (row.Minimo !== '' || row.Maximo !== '') {
-    row.Estado = 'OK';
+  const cantidadVacia = input.value.trim() === "";
+  if (cantidadVacia) {
+    row.PedidoSugerido = "";
+    row.CostoTotal = "";
+    row.Estado = "PEDIR";
   } else {
-    row.Estado = 'SIN REGLAS';
+    const value = Math.max(0, parseInt(input.value, 10) || 0);
+    row.PedidoSugerido = value;
+    row.CostoTotal = (row.CostoUnitario && row.CostoUnitario !== null && row.CostoUnitario > 0) ? value * row.CostoUnitario : "";
+
+    if (value > 0) {
+      row.Estado = 'PEDIR';
+    } else if (row.Exceso > 0) {
+      row.Estado = 'EXCESO';
+    } else if (row.Minimo !== '' || row.Maximo !== '') {
+      row.Estado = 'OK';
+    } else {
+      row.Estado = 'SIN REGLAS';
+    }
   }
 
   updateMetrics(state.rows);
   recalcularTotalPorFiltroInventario();
+}
+
+function handlePedidoSugeridoCommit(event) {
+  if (event.target.value.trim() === "") {
+    mostrarNotificacion("Debes colocar una cantidad para este producto.", true);
+    return;
+  }
   applyFilterAndSearch();
 }
 
@@ -838,7 +851,7 @@ function applyFilterAndSearch() {
   if (currentFilter === "pedido" || currentFilter === "pedir") {
     // ==================== FILTRO DE PEDIDO (NUEVA LÓGICA) ====================
     filtered = filtered.filter(r => {
-      if (r.PedidoSugerido <= 0) return false;
+      if (r.PedidoSugerido <= 0 && r.PedidoSugerido !== "") return false;
 
       const inventario = r.Inventario;
       const estaEnMinimo = isProductoEnMinimo(r);
@@ -951,6 +964,8 @@ function applyFilterAndSearch() {
 // ============================================================
 
 let selectedProductForOrder = null;
+let manualProductSearchIndex = null;
+const MANUAL_SEARCH_RESULTS_LIMIT = 100;
 
 async function asegurarAdminRulesCargado() {
   if (state.adminRules && Object.keys(state.adminRules).length > 0) {
@@ -989,6 +1004,7 @@ function openAddProductModal() {
   
   if (!modal) return;
   
+  manualProductSearchIndex = null;
   if (searchInput) searchInput.value = "";
   if (resultsDiv) {
     resultsDiv.innerHTML = '<div style="padding: 20px; text-align: center;">🔄 Cargando productos...</div>';
@@ -1015,62 +1031,64 @@ function closeAddProductModal() {
 
 function searchProductsInListaCompleta(searchTerm) {
   const term = searchTerm ? searchTerm.toLowerCase().trim() : "";
-  const resultsMap = new Map();
-  
-  if (state.adminRules && Object.keys(state.adminRules).length > 0) {
-    Object.keys(state.adminRules).forEach(sku => {
-      const skuLower = sku.toLowerCase();
-      const producto = (state.adminRules[sku].producto || "").toLowerCase();
-      
-      const matches = !term || skuLower.includes(term) || producto.includes(term);
-      
-      if (matches && !resultsMap.has(sku)) {
-        const precio = (state.preciosLookup && state.preciosLookup[sku]) ? state.preciosLookup[sku] : 0;
-        // Buscar el inventario real: primero en state.rows (si ya está en la
-        // tabla), y si no, directamente en el archivo cargado (rawJson) —
-        // así un producto purgado sigue mostrando su existencia real aquí.
-        const skuKey = normalizeSku(sku);
-        const rowExistente = (state.rows || []).find(r => normalizeSku(r.SKU) === skuKey);
-        let inventario = rowExistente && rowExistente.Inventario !== undefined && rowExistente.Inventario !== null
-          ? Number(rowExistente.Inventario)
-          : null;
-        if (inventario === null && typeof buscarInventarioRealPorSku === "function") {
-          inventario = buscarInventarioRealPorSku(sku);
+  if (!manualProductSearchIndex) {
+    const resultsMap = new Map();
+    const rowBySku = new Map((state.rows || []).map(row => [normalizeSku(row.SKU), row]));
+    const rawInventoryBySku = new Map();
+
+    if (state.rawJson && state.columnMap) {
+      const map = state.columnMap;
+      state.rawJson.forEach(rawRow => {
+        const rawSku = rawRow && rawRow[map.SKU];
+        if (rawSku === undefined || rawSku === null || rawSku === "") return;
+        const skuKey = normalizeSku(rawSku);
+        if (!skuKey) return;
+        const rawInventory = rawRow[map.Inventario];
+        let inventory = 0;
+        if (rawInventory !== undefined && rawInventory !== null && rawInventory !== "") {
+          const numericValue = toNum(String(rawInventory).trim());
+          if (!isNaN(numericValue)) inventory = Math.max(0, numericValue);
         }
-        resultsMap.set(sku, {
-          SKU: sku,
-          Producto: state.adminRules[sku].producto || sku,
-          Precio: precio,
-          Inventario: inventario,
-          source: "reglas"
-        });
+        rawInventoryBySku.set(skuKey, (rawInventoryBySku.get(skuKey) || 0) + inventory);
+      });
+    }
+
+    Object.keys(state.adminRules || {}).forEach(sku => {
+      const skuKey = normalizeSku(sku);
+      const row = rowBySku.get(skuKey);
+      let inventory = null;
+      if (row && row.Inventario !== undefined && row.Inventario !== null) {
+        inventory = Number(row.Inventario);
+      } else if (rawInventoryBySku.has(skuKey)) {
+        inventory = rawInventoryBySku.get(skuKey);
       }
+      resultsMap.set(skuKey, {
+        SKU: sku,
+        Producto: state.adminRules[sku].producto || sku,
+        Precio: (state.preciosLookup && state.preciosLookup[sku]) ? state.preciosLookup[sku] : 0,
+        Inventario: inventory,
+        source: "reglas"
+      });
     });
-  }
-  
-  if (state.rows && state.rows.length > 0) {
-    state.rows.forEach(row => {
-      const skuLower = (row.SKU || "").toLowerCase();
-      const producto = (row.Producto || "").toLowerCase();
-      
-      const matches = !term || skuLower.includes(term) || producto.includes(term);
-      
-      if (matches && !resultsMap.has(row.SKU)) {
-        resultsMap.set(row.SKU, {
-          SKU: row.SKU,
-          Producto: row.Producto || row.SKU,
-          Precio: row.CostoUnitario || 0,
-          Inventario: row.Inventario !== undefined && row.Inventario !== null ? Number(row.Inventario) : null,
-          source: "inventario"
-        });
-      }
+
+    (state.rows || []).forEach(row => {
+      const skuKey = normalizeSku(row.SKU);
+      if (!skuKey || resultsMap.has(skuKey)) return;
+      resultsMap.set(skuKey, {
+        SKU: row.SKU,
+        Producto: row.Producto || row.SKU,
+        Precio: row.CostoUnitario || 0,
+        Inventario: row.Inventario !== undefined && row.Inventario !== null ? Number(row.Inventario) : null,
+        source: "inventario"
+      });
     });
+
+    manualProductSearchIndex = Array.from(resultsMap.values()).sort((a, b) => a.SKU.localeCompare(b.SKU));
   }
-  
-  const results = Array.from(resultsMap.values());
-  results.sort((a, b) => a.SKU.localeCompare(b.SKU));
-  
-  return results;
+
+  return manualProductSearchIndex.filter(item =>
+    !term || item.SKU.toLowerCase().includes(term) || item.Producto.toLowerCase().includes(term)
+  );
 }
 
 function renderSearchResults(results) {
@@ -1083,7 +1101,8 @@ function renderSearchResults(results) {
     return;
   }
   
-  resultsDiv.innerHTML = results.map(item => {
+  const visibleResults = results.slice(0, MANUAL_SEARCH_RESULTS_LIMIT);
+  resultsDiv.innerHTML = visibleResults.map(item => {
     const precioMostrar = item.Precio > 0 ? `$${fmt(item.Precio)}` : '<span style="color: var(--warning);">Sin precio</span>';
     const sourceIcon = item.source === "precios" ? "💰" : (item.source === "reglas" ? "📋" : "📦");
 
@@ -1106,7 +1125,9 @@ function renderSearchResults(results) {
         </div>
       </div>
     `;
-  }).join('');
+  }).join('') + (results.length > visibleResults.length
+    ? `<div style="padding: 10px; text-align: center; color: var(--muted);">Mostrando ${visibleResults.length} de ${results.length}; afina la búsqueda para ver más.</div>`
+    : "");
   
   resultsDiv.querySelectorAll('.search-result-item').forEach(el => {
     el.addEventListener('click', () => {
@@ -1292,8 +1313,15 @@ function addProductToPedido() {
   // 9. APLICAR FILTROS DIRECTAMENTE
   applyFilterAndSearch();
   
-  // 10. Cerrar modal
-  closeAddProductModal();
+  // 10. Mantener abierto el modal para permitir agregar más productos
+  manualProductSearchIndex = null;
+  selectedProductForOrder = null;
+  document.querySelectorAll("#searchResults .search-result-item.selected").forEach(item => item.classList.remove("selected"));
+  const confirmBtn = document.getElementById("btnConfirmAddProduct");
+  if (confirmBtn) confirmBtn.disabled = true;
+  const cantidadInputReset = document.getElementById("manualPedidoCantidad");
+  if (cantidadInputReset) cantidadInputReset.value = "1";
+  document.getElementById("searchProductInput")?.focus();
   
   // 11. Actualizar botón de exportación
   if (typeof updateExportButtonState === "function") updateExportButtonState();
@@ -1318,14 +1346,10 @@ function initManualProductModal() {
   if (closeBtn) closeBtn.addEventListener("click", closeAddProductModal);
   if (confirmBtn) confirmBtn.addEventListener("click", addProductToPedido);
   
-  let searchTimeout;
   if (searchInput) {
     searchInput.addEventListener("input", (e) => {
-      clearTimeout(searchTimeout);
-      searchTimeout = setTimeout(() => {
-        const results = searchProductsInListaCompleta(e.target.value);
-        renderSearchResults(results);
-      }, 300);
+      const results = searchProductsInListaCompleta(e.target.value);
+      renderSearchResults(results);
     });
   }
   
