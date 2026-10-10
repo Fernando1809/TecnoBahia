@@ -132,6 +132,19 @@ async function exportResults() {
     return;
   }
 
+  const productosSinCantidad = state.rows.filter(item => item.PedidoSugerido === "");
+  if (productosSinCantidad.length > 0) {
+    const listaProductos = productosSinCantidad.map(item => ({
+      SKU: String(item.SKU || "SKU no disponible"),
+      Producto: String(item.Producto || "Nombre no disponible")
+    }));
+    await mostrarAlerta("No podemos proceder con la generación del pedido hasta que asigne una cantidad a estos ítems:", {
+      titulo: "Cantidad pendiente",
+      items: listaProductos
+    });
+    return;
+  }
+
   // Usar la función que respeta el filtro de inventario seleccionado
   const productsToOrder = getProductosParaExportar();
   
@@ -149,10 +162,6 @@ async function exportResults() {
   }
   
   const sucursalPedido = state.inventoryOrigin || state.sucursalActiva || "General";
-  if (typeof mostrarMemoriaPedidoAnterior === "function") {
-    mostrarMemoriaPedidoAnterior(sucursalPedido);
-  }
-
   const wb = getPedidoWorkbook(); 
   if (!wb) {
     setStatus("No se pudo leer la plantilla PEDIDO.", true);
@@ -239,12 +248,8 @@ async function exportResults() {
   console.log("📦 Productos incluidos:", productsToOrder.length);
   console.log("🎯 Filtro aplicado - includeZero:", window.inventoryPedidoFilter.includeZero, "includeAtMin:", window.inventoryPedidoFilter.includeAtMin);
   
-  const esAgregado = confirm(
-    `¿Este pedido es un agregado al pedido anterior de ${sucursalPedido}?\n\n` +
-    `Aceptar: agregar los productos y sumar cantidades repetidas.\n` +
-    `Cancelar: pedido nuevo; reemplazar el pedido anterior.`
-  );
-  const tipoPedido = esAgregado ? "agregado" : "nuevo";
+  const tipoPedido = await solicitarTipoPedido(sucursalPedido);
+  if (!tipoPedido) return;
   const memoriaGuardada = await guardarMemoriaPedidoActual(sucursalPedido, productsToOrder, tipoPedido);
   if (!memoriaGuardada) return;
 
@@ -260,4 +265,40 @@ async function exportResults() {
   }
   
   setStatus(`📁 Pedido descargado: ${productsToOrder.length} productos (${filtroDescripcion}). Total: $${totalPedido.toFixed(2)}`, false);
+}
+
+function solicitarTipoPedido(sucursalPedido) {
+  const modal = document.getElementById("modalTipoPedido");
+  const description = document.getElementById("modalTipoPedidoDescription");
+  const agregadoBtn = document.getElementById("btnTipoPedidoAgregado");
+  const nuevoBtn = document.getElementById("btnTipoPedidoNuevo");
+  if (!modal || !agregadoBtn || !nuevoBtn) return Promise.resolve(null);
+  if (description) {
+    description.textContent = `¿Deseas agregar este pedido al pedido anterior de ${sucursalPedido} o generar un pedido nuevo?`;
+  }
+
+  return new Promise(resolve => {
+    const finalizar = tipoPedido => {
+      modal.classList.remove("open");
+      agregadoBtn.removeEventListener("click", seleccionarAgregado);
+      nuevoBtn.removeEventListener("click", seleccionarNuevo);
+      modal.removeEventListener("click", cerrarAlHacerClicFuera);
+      document.removeEventListener("keydown", cerrarConEscape);
+      resolve(tipoPedido);
+    };
+    const seleccionarAgregado = () => finalizar("agregado");
+    const seleccionarNuevo = () => finalizar("nuevo");
+    const cerrarAlHacerClicFuera = event => {
+      if (event.target === modal) finalizar(null);
+    };
+    const cerrarConEscape = event => {
+      if (event.key === "Escape") finalizar(null);
+    };
+
+    agregadoBtn.addEventListener("click", seleccionarAgregado);
+    nuevoBtn.addEventListener("click", seleccionarNuevo);
+    modal.addEventListener("click", cerrarAlHacerClicFuera);
+    document.addEventListener("keydown", cerrarConEscape);
+    modal.classList.add("open");
+  });
 }

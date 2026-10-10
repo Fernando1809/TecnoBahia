@@ -163,7 +163,7 @@ function handleSelectAllVisibleChange(event) {
   updateBulkSelectionToolbar();
 }
 
-function bulkDeleteSelectedProducts() {
+async function bulkDeleteSelectedProducts() {
   const selectionState = getBulkSelectionState();
   const selectedSKUs = [...selectionState.selectedSKUs];
   if (selectedSKUs.length === 0) return;
@@ -172,7 +172,7 @@ function bulkDeleteSelectedProducts() {
   const preview = selectedProducts.slice(0, 3).map(item => item.Producto || item.SKU).join(", ");
   const suffix = selectedProducts.length > 3 ? ` y ${selectedProducts.length - 3} más` : "";
 
-  if (!confirm(`¿Deseas eliminar ${selectedProducts.length} producto(s) seleccionados?\n${preview}${suffix}`)) {
+  if (!await mostrarConfirmacion(`¿Deseas eliminar ${selectedProducts.length} producto(s) seleccionados?\n${preview}${suffix}`)) {
     return;
   }
 
@@ -861,7 +861,10 @@ function handlePedidoSugeridoChange(event) {
 
 function handlePedidoSugeridoCommit(event) {
   if (event.target.value.trim() === "") {
-    mostrarNotificacion("Debes colocar una cantidad para este producto.", true);
+    const sku = event.target.getAttribute("data-sku");
+    const row = state.rows.find(item => item.SKU === sku);
+    const producto = row?.Producto || "Nombre no disponible";
+    mostrarNotificacion(`Debes colocar una cantidad para este producto:\n\n${sku || "SKU no disponible"} - ${producto}`, true);
     return;
   }
   applyFilterAndSearch();
@@ -1189,7 +1192,7 @@ function renderSearchResults(results) {
 }
 
 // FUNCIÓN CORREGIDA - AHORA SÍ AGREGA LOS PRODUCTOS CON PRECIO Y FORZA INVENTARIO A 0
-function addProductToPedido() {
+async function addProductToPedido() {
   if (!selectedProductForOrder) {
     setStatus("Selecciona un producto primero.", true);
     return;
@@ -1208,7 +1211,7 @@ function addProductToPedido() {
   
   // SI EL PRECIO ES 0 O NULO, PEDIR AL USUARIO QUE INGRESE UN PRECIO
   if (!precio || precio === 0) {
-    const precioIngresado = prompt(`El producto "${sku}" no tiene precio definido.\nIngresa el precio unitario SIN IVA:`);
+    const precioIngresado = await solicitarEntrada(`El producto "${sku}" no tiene precio definido.\nIngresa el precio unitario SIN IVA:`);
     if (precioIngresado === null) {
       setStatus("Operación cancelada", true);
       return;
@@ -1534,9 +1537,9 @@ function renderAdminTable(data) {
 
   // Event listener para botones de eliminar
   document.querySelectorAll('[data-delete-sku]').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const sku = btn.getAttribute('data-delete-sku');
-      if (confirm(`Eliminar reglas para el SKU "${sku}"?`)) {
+      if (await mostrarConfirmacion(`Eliminar reglas para el SKU "${sku}"?`)) {
         delete state.adminRules[sku];
         persistRules();
         recalculateRows();

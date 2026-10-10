@@ -129,6 +129,17 @@
             </div>
           </div>
         </div>
+
+        <div id="modalTipoPedido" class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTipoPedidoTitle">
+          <div style="max-width: 480px;">
+            <h3 id="modalTipoPedidoTitle" style="margin: 0 0 12px;">Tipo de pedido</h3>
+            <p id="modalTipoPedidoDescription" style="margin: 0 0 20px;"></p>
+            <div style="display: flex; gap: 12px; justify-content: flex-end; flex-wrap: wrap;">
+              <button id="btnTipoPedidoAgregado" type="button" class="btn-secondary">Agregado de pedido</button>
+              <button id="btnTipoPedidoNuevo" type="button" class="btn-secondary" style="background: var(--primary); color: white;">Nuevo pedido</button>
+            </div>
+          </div>
+        </div>
         
         <div id="bulkSelectionToolbar" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
           <button id="selectPreviousOrderBtn" type="button" class="btn-secondary">↩️ Seleccionar pedido anterior</button>

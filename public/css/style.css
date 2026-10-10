@@ -324,6 +324,110 @@ th {
 
 .status-msg { margin-top: 8px; font-weight: 500; }
 
+.aux-popup-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.58);
+  animation: auxPopupFadeIn 0.16s ease-out;
+}
+
+.aux-popup-card {
+  width: min(100%, 520px);
+  max-height: min(80vh, 720px);
+  overflow: auto;
+  padding: 0;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.28);
+  animation: auxPopupEnter 0.2s ease-out;
+}
+
+.aux-popup-header {
+  padding: 14px 20px;
+  color: white;
+  background: var(--primary);
+  border-bottom: 1px solid var(--border);
+  font-weight: 700;
+}
+
+.aux-popup-card.is-error .aux-popup-header {
+  background: var(--danger);
+}
+
+.aux-popup-body {
+  padding: 20px;
+}
+
+.aux-popup-title {
+  margin: 0 0 10px;
+  font-size: 1.1rem;
+}
+
+.aux-popup-text {
+  max-height: 48vh;
+  overflow: auto;
+  margin: 0;
+  color: var(--text);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.aux-popup-item-list {
+  max-height: 36vh;
+  overflow: auto;
+  margin: 14px 0 0;
+  padding-left: 22px;
+  color: var(--text);
+}
+
+.aux-popup-item-list li {
+  padding: 5px 0;
+  overflow-wrap: anywhere;
+}
+
+.aux-popup-input {
+  width: 100%;
+  margin-top: 16px;
+  padding: 10px 12px;
+  color: var(--text);
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.aux-popup-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+}
+
+.aux-popup-button {
+  min-width: 104px;
+  padding: 9px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+@keyframes auxPopupFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes auxPopupEnter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .toast-notification {
   position: fixed;
   bottom: 30px;

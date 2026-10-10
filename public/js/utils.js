@@ -51,16 +51,130 @@ function fmt(n) {
   return Number(n || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 });
 }
 
+function mostrarPopupAuxiliar(mensaje, opciones = {}) {
+  const tipo = opciones.tipo || "notificacion";
+  const esInteractivo = tipo === "confirmacion" || tipo === "entrada";
+
+  return new Promise(resolve => {
+    const existingPopup = document.querySelector(".aux-popup-overlay");
+    if (existingPopup && existingPopup.cerrarPopup) existingPopup.cerrarPopup(null);
+
+    const overlay = document.createElement("div");
+    overlay.className = "aux-popup-overlay";
+    overlay.setAttribute("role", "presentation");
+
+    const dialog = document.createElement("section");
+    dialog.className = `aux-popup-card${opciones.esError ? " is-error" : ""}`;
+    dialog.setAttribute("role", esInteractivo || tipo === "alerta" ? "alertdialog" : "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.setAttribute("aria-label", opciones.titulo || "Auxiliar de pedidos");
+
+    const header = document.createElement("div");
+    header.className = "card-header aux-popup-header";
+    header.textContent = opciones.titulo || (opciones.esError ? "Atención" : "Auxiliar de pedidos");
+
+    const body = document.createElement("div");
+    body.className = "card-body aux-popup-body";
+
+    const title = document.createElement("h4");
+    title.className = "card-title aux-popup-title";
+    title.textContent = opciones.esError ? "Revisa este mensaje" : "Mensaje";
+
+    const text = document.createElement("p");
+    text.className = "card-text aux-popup-text";
+    text.textContent = String(mensaje ?? "");
+    body.append(title, text);
+    if (Array.isArray(opciones.items) && opciones.items.length > 0) {
+      const itemList = document.createElement("ul");
+      itemList.className = "aux-popup-item-list";
+      opciones.items.forEach(item => {
+        const listItem = document.createElement("li");
+        const sku = document.createElement("strong");
+        sku.textContent = item.SKU;
+        const name = document.createElement("span");
+        name.textContent = ` - ${item.Producto}`;
+        listItem.append(sku, name);
+        itemList.appendChild(listItem);
+      });
+      body.appendChild(itemList);
+    }
+
+    let input = null;
+    if (tipo === "entrada") {
+      input = document.createElement("input");
+      input.className = "aux-popup-input";
+      input.type = opciones.tipoEntrada || "text";
+      input.value = opciones.valorInicial ?? "";
+      input.placeholder = opciones.placeholder || "";
+      input.setAttribute("aria-label", opciones.etiquetaEntrada || "Dato");
+      body.appendChild(input);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "aux-popup-actions";
+    dialog.append(header, body, actions);
+    overlay.appendChild(dialog);
+
+    let closed = false;
+    const close = value => {
+      if (closed) return;
+      closed = true;
+      document.removeEventListener("keydown", handleKeydown);
+      overlay.remove();
+      resolve(value);
+    };
+    overlay.cerrarPopup = close;
+
+    const primaryButton = document.createElement("button");
+    primaryButton.type = "button";
+    primaryButton.className = "btn-solid theme-primary aux-popup-button";
+    primaryButton.textContent = opciones.aceptarTexto || (tipo === "confirmacion" ? "Confirmar" : "Aceptar");
+    primaryButton.addEventListener("click", () => {
+      close(tipo === "confirmacion" ? true : tipo === "entrada" ? input.value : undefined);
+    });
+    actions.appendChild(primaryButton);
+
+    if (esInteractivo) {
+      const cancelButton = document.createElement("button");
+      cancelButton.type = "button";
+      cancelButton.className = "btn-secondary aux-popup-button";
+      cancelButton.textContent = opciones.cancelarTexto || "Cancelar";
+      cancelButton.addEventListener("click", () => close(tipo === "confirmacion" ? false : null));
+      actions.insertBefore(cancelButton, primaryButton);
+    }
+
+    function handleKeydown(event) {
+      if (event.key === "Escape") {
+        close(tipo === "confirmacion" ? false : null);
+      } else if (event.key === "Enter" && tipo === "entrada" && document.activeElement === input) {
+        event.preventDefault();
+        close(input.value);
+      }
+    }
+
+    overlay.addEventListener("click", event => {
+      if (event.target === overlay) close(tipo === "confirmacion" ? false : null);
+    });
+    document.addEventListener("keydown", handleKeydown);
+    document.body.appendChild(overlay);
+    (input || primaryButton).focus();
+  });
+}
+
 function mostrarNotificacion(mensaje, esError = false) {
-  const existingToast = document.querySelector('.toast-notification');
-  if (existingToast) existingToast.remove();
-  
-  const toast = document.createElement('div');
-  toast.className = 'toast-notification';
-  toast.textContent = mensaje;
-  toast.style.backgroundColor = esError ? '#dc2626' : '#10b981';
-  document.body.appendChild(toast);
-  setTimeout(() => toast.remove(), 3000);
+  return mostrarPopupAuxiliar(mensaje, { tipo: "notificacion", esError });
+}
+
+function mostrarAlerta(mensaje, opciones = {}) {
+  return mostrarPopupAuxiliar(mensaje, { ...opciones, tipo: "alerta", titulo: opciones.titulo || "Aviso" });
+}
+
+function mostrarConfirmacion(mensaje) {
+  return mostrarPopupAuxiliar(mensaje, { tipo: "confirmacion", titulo: "Confirmación" });
+}
+
+function solicitarEntrada(mensaje, opciones = {}) {
+  return mostrarPopupAuxiliar(mensaje, { ...opciones, tipo: "entrada", titulo: opciones.titulo || "Ingresar dato" });
 }
 
 function setStatus(msg, isError = false) {

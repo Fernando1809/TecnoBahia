@@ -743,7 +743,7 @@ async function saveRulesFromInputs() {
 
 async function clearAllRules() {
   if (!state.adminUnlocked) return;
-  if (confirm("⚠️ ¿Eliminar SOLO las reglas de mínimos y máximos?\n\nLos SKUs seguirán apareciendo, solo se eliminarán los valores de mínimo y máximo.")) {
+  if (await mostrarConfirmacion("⚠️ ¿Eliminar SOLO las reglas de mínimos y máximos?\n\nLos SKUs seguirán apareciendo, solo se eliminarán los valores de mínimo y máximo.")) {
     for (const sku in state.adminRules) {
       state.adminRules[sku].minimo = "";
       state.adminRules[sku].maximo = "";
@@ -761,15 +761,15 @@ async function clearAllRules() {
   }
 }
 
-function addNewSku() {
+async function addNewSku() {
   if (!state.adminUnlocked) return;
   
-  const newSku = prompt("Ingrese el nuevo SKU (código):");
+  const newSku = await solicitarEntrada("Ingrese el nuevo SKU (código):");
   if (!newSku || newSku.trim() === "") return;
   const skuTrim = newSku.trim().toUpperCase();
   
   if (state.adminRules[skuTrim]) {
-    alert(`El SKU "${skuTrim}" ya existe.`);
+    await mostrarAlerta(`El SKU "${skuTrim}" ya existe.`);
     return;
   }
   
@@ -790,7 +790,7 @@ function addNewSku() {
   }
   
   if (!producto) {
-    const nombreIngresado = prompt(
+    const nombreIngresado = await solicitarEntrada(
       `No se encontró información del producto "${skuTrim}".\n` +
       `Ingresa el nombre del producto (opcional, presiona Cancelar para usar el SKU como nombre):`
     );
@@ -807,13 +807,13 @@ function addNewSku() {
   
   let minimo = "";
   let maximo = "";
-  const establecerReglas = confirm(
+  const establecerReglas = await mostrarConfirmacion(
     `¿Deseas establecer valores de mínimo y máximo para "${skuTrim}" ahora?\n` +
     `(Si no, podrás hacerlo más tarde desde la tabla)`
   );
   
   if (establecerReglas) {
-    const minInput = prompt(`Ingresa el valor MÍNIMO para "${skuTrim}":`);
+    const minInput = await solicitarEntrada(`Ingresa el valor MÍNIMO para "${skuTrim}":`);
     if (minInput !== null && minInput.trim() !== "") {
       const minVal = parseFloat(minInput.trim().replace(/,/g, "."));
       if (!isNaN(minVal) && minVal >= 0) {
@@ -823,7 +823,7 @@ function addNewSku() {
       }
     }
     
-    const maxInput = prompt(`Ingresa el valor MÁXIMO para "${skuTrim}":`);
+    const maxInput = await solicitarEntrada(`Ingresa el valor MÁXIMO para "${skuTrim}":`);
     if (maxInput !== null && maxInput.trim() !== "") {
       const maxVal = parseFloat(maxInput.trim().replace(/,/g, "."));
       if (!isNaN(maxVal) && maxVal >= 0) {
@@ -921,9 +921,9 @@ function parseRulesCsv(text, delimiter) {
   return records;
 }
 
-function importRulesExcel(sucursal) {
+async function importRulesExcel(sucursal) {
   if (!state.adminUnlocked) {
-    alert("Debes iniciar sesión como administrador");
+    await mostrarAlerta("Debes iniciar sesión como administrador");
     return;
   }
 
@@ -933,7 +933,7 @@ function importRulesExcel(sucursal) {
   const file = fileInput.files[0];
   
   if (!file) {
-    alert("❌ Por favor selecciona un archivo Excel o CSV primero.");
+    await mostrarAlerta("❌ Por favor selecciona un archivo Excel o CSV primero.");
     return;
   }
 
@@ -962,7 +962,7 @@ function importRulesExcel(sucursal) {
       }
       
       if (!rows || rows.length < 2) {
-        alert("El archivo no tiene datos");
+        await mostrarAlerta("El archivo no tiene datos");
         fileInput.value = "";
         return;
       }
@@ -1161,7 +1161,7 @@ function importRulesExcel(sucursal) {
       if (actualizados > 0) {
         mensaje += `\n📝 Nombres actualizados para ${actualizados} SKUs.`;
       }
-      alert(mensaje);
+      await mostrarAlerta(mensaje);
       setStatus(mensaje, false);
       
       if (typeof recalculateRows === "function") {
@@ -1170,7 +1170,7 @@ function importRulesExcel(sucursal) {
       
     } catch (err) {
       console.error("Error al procesar el archivo:", err);
-      alert("Error al procesar el archivo: " + err.message);
+      await mostrarAlerta("Error al procesar el archivo: " + err.message);
       fileInput.value = "";
     }
   };
@@ -1183,7 +1183,7 @@ function importRulesExcel(sucursal) {
 
 async function clearAllPrices() {
   if (!state.adminUnlocked) return;
-  if (confirm("⚠️ ¿ELIMINAR TODOS LOS PRECIOS GUARDADOS? Esta acción no se puede deshacer. Luego deberás volver a subir el archivo de precios.")) {
+  if (await mostrarConfirmacion("⚠️ ¿ELIMINAR TODOS LOS PRECIOS GUARDADOS? Esta acción no se puede deshacer. Luego deberás volver a subir el archivo de precios.")) {
     state.listaCompleta = [];
     state.preciosLookup = {};
     preciosLastUpdate = null;
@@ -1829,7 +1829,7 @@ function getConfirmacionStatus(sku) {
   return state.adminRules[sku].confirmado === true;
 }
 
-function marcarTodosConfirmados() {
+async function marcarTodosConfirmados() {
   if (!state.adminUnlocked) return;
   
   const total = Object.keys(state.adminRules).length;
@@ -1838,7 +1838,7 @@ function marcarTodosConfirmados() {
     return;
   }
   
-  if (!confirm(`¿Marcar todos los ${total} SKUs como CONFIRMADOS?`)) return;
+  if (!await mostrarConfirmacion(`¿Marcar todos los ${total} SKUs como CONFIRMADOS?`)) return;
   
   for (const sku in state.adminRules) {
     state.adminRules[sku].confirmado = true;
@@ -1850,7 +1850,7 @@ function marcarTodosConfirmados() {
   mostrarNotificacion(`✅ ${total} SKUs confirmados`, false);
 }
 
-function desmarcarTodosConfirmados() {
+async function desmarcarTodosConfirmados() {
   if (!state.adminUnlocked) return;
   
   const total = Object.keys(state.adminRules).length;
@@ -1859,7 +1859,7 @@ function desmarcarTodosConfirmados() {
     return;
   }
   
-  if (!confirm(`¿Desmarcar todos los ${total} SKUs como NO CONFIRMADOS?`)) return;
+  if (!await mostrarConfirmacion(`¿Desmarcar todos los ${total} SKUs como NO CONFIRMADOS?`)) return;
   
   for (const sku in state.adminRules) {
     state.adminRules[sku].confirmado = false;
@@ -2046,9 +2046,9 @@ function renderAdminTable(data) {
 
   // Event listener para botones de eliminar
   document.querySelectorAll('[data-delete-sku]').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const sku = btn.getAttribute('data-delete-sku');
-      if (confirm(`Eliminar reglas para el SKU "${sku}"?`)) {
+      if (await mostrarConfirmacion(`Eliminar reglas para el SKU "${sku}"?`)) {
         delete state.adminRules[sku];
         persistRules();
         recalculateRows();
@@ -2178,7 +2178,7 @@ async function clearAllItems() {
   if (!state.adminUnlocked) return;
 
   const sucursal = state.sucursalActiva || "Jiquilisco";
-  const confirmed = confirm(`⚠️ ¡ADVERTENCIA! ⚠️\n\nEsta acción ELIMINARÁ TODOS los SKUs de la sucursal "${sucursal}".\n\nSe eliminarán (solo para ${sucursal}):\n- Todos los SKUs (con o sin reglas)\n- Todas las reglas de mínimos y máximos\n- Todos los estados de confirmación\n\nLa otra sucursal no se ve afectada. Esta acción NO se puede deshacer.\n\n¿Estás SEGURO?`);
+  const confirmed = await mostrarConfirmacion(`⚠️ ¡ADVERTENCIA! ⚠️\n\nEsta acción ELIMINARÁ TODOS los SKUs de la sucursal "${sucursal}".\n\nSe eliminarán (solo para ${sucursal}):\n- Todos los SKUs (con o sin reglas)\n- Todas las reglas de mínimos y máximos\n- Todos los estados de confirmación\n\nLa otra sucursal no se ve afectada. Esta acción NO se puede deshacer.\n\n¿Estás SEGURO?`);
   
   if (!confirmed) return;
   
@@ -2218,9 +2218,9 @@ async function clearAllItems() {
 // FUNCIÓN PARA LIMPIAR LA PLANTILLA
 // ============================================================
 
-function clearPedidoTemplate() {
+async function clearPedidoTemplate() {
   if (!state.adminUnlocked) return;
-  if (confirm("⚠️ ¿Eliminar la plantilla de pedido actual?")) {
+  if (await mostrarConfirmacion("⚠️ ¿Eliminar la plantilla de pedido actual?")) {
     state.pedidoTemplateBase64 = null;
     state.pedidoTemplateLoaded = false;
     state.pedidoTemplateName = null;
