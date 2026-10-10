@@ -101,6 +101,40 @@ function clearBulkSelection() {
   updateBulkSelectionToolbar();
 }
 
+function selectPreviousOrderProducts() {
+  if (typeof getPedidoAnteriorSet !== "function") {
+    mostrarNotificacion("No se pudo cargar el pedido anterior.", true);
+    return;
+  }
+
+  state.activeFilter = "pedido";
+  document.querySelectorAll(".filter-chip").forEach(chip => {
+    chip.classList.toggle("active", chip.getAttribute("data-filter") === "pedido");
+  });
+  resetReportPagination();
+  applyFilterAndSearch();
+
+  const sucursal = state.inventoryOrigin || state.sucursalActiva || "Jiquilisco";
+  const previousOrder = getPedidoAnteriorSet(sucursal);
+  const previousSKUs = new Set(Array.from(previousOrder.keys(), normalizeSku));
+  const selectionState = getBulkSelectionState();
+  selectionState.selectedSKUs = (state.filtered || [])
+    .filter(row => previousSKUs.has(normalizeSku(row.SKU)))
+    .map(row => row.SKU);
+
+  applyFilterAndSearch();
+
+  if (selectionState.selectedSKUs.length === 0) {
+    const message = previousSKUs.size
+      ? "No hay productos del pedido anterior en la tabla de pedido actual."
+      : "No hay productos guardados del pedido anterior para esta sucursal.";
+    mostrarNotificacion(message, true);
+    return;
+  }
+
+  mostrarNotificacion(`${selectionState.selectedSKUs.length} producto(s) del pedido anterior seleccionados.`, false);
+}
+
 function handleRowSelectionChange(event) {
   const checkbox = event.target;
   const sku = checkbox.getAttribute('data-sku');
@@ -302,6 +336,12 @@ function renderTableDynamic(data, filterType) {
   if (!thead || !tbody) return;
 
   const activeFilter = String(filterType || "todos").toLowerCase();
+
+  const selectPreviousOrderBtn = document.getElementById("selectPreviousOrderBtn");
+  if (selectPreviousOrderBtn && !selectPreviousOrderBtn.dataset.bound) {
+    selectPreviousOrderBtn.addEventListener("click", selectPreviousOrderProducts);
+    selectPreviousOrderBtn.dataset.bound = "true";
+  }
 
   let columns = [];
   const selectionColumn = { key: "__select__", label: "", sortable: false };
