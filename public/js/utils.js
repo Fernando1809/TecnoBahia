@@ -4,6 +4,10 @@ function norm(v) {
   return String(v || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
+function sanitizeProductName(value) {
+  return String(value ?? "").split(/[,;]/, 1)[0].trim();
+}
+
 function normalizeSku(v) {
   return String(v ?? "")
     .trim()

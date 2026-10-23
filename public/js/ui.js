@@ -32,6 +32,117 @@ if (typeof window.inventoryPedidoFilter === 'undefined') {
   };
 }
 
+if (typeof window.stockProductFilter === 'undefined') {
+  window.stockProductFilter = {
+    active: false,
+    families: [],
+    presentations: []
+  };
+}
+
+const STOCK_PRESENTATION_SUFFIXES = ["-1", "-5", "-1/4", "-BOT"];
+
+function getStockProductFamily(input) {
+  const prefixes = input.dataset.stockPrefix
+    ? input.dataset.stockPrefix.split(",").map(prefix => prefix.trim().toUpperCase()).filter(Boolean)
+    : [];
+  const otherPrefixes = Array.from(document.querySelectorAll("input[data-stock-prefix]"))
+    .filter(otherInput => otherInput !== input)
+    .flatMap(otherInput => (otherInput.dataset.stockPrefix || "")
+      .split(",")
+      .map(prefix => prefix.trim().toUpperCase())
+      .filter(Boolean));
+
+  return {
+    prefixes,
+    ambiguousPrefixes: prefixes.filter(prefix => otherPrefixes.some(otherPrefix =>
+      prefix.startsWith(otherPrefix) || otherPrefix.startsWith(prefix)
+    )),
+    skuPattern: input.dataset.stockPattern || "",
+    nameTerms: input.dataset.stockName ? input.dataset.stockName.split("|") : [],
+    requireName: input.dataset.stockRequireName === "true",
+    excludeNameTerms: input.dataset.stockExcludeName ? input.dataset.stockExcludeName.split("|") : []
+  };
+}
+
+function matchesStockProductFamily(row, family) {
+  const sku = String(row.SKU || "").toUpperCase().replace(/\s+/g, "");
+  const productName = norm(row.Producto || "");
+  if (productName.includes("oferta")) return false;
+
+  const matchesSku = family.skuPattern
+    ? new RegExp(family.skuPattern).test(sku)
+    : family.prefixes.some(prefix => sku.startsWith(prefix));
+  const hasAmbiguousPrefix = family.ambiguousPrefixes.some(prefix => sku.startsWith(prefix));
+
+  return matchesSku &&
+    (!(family.requireName || hasAmbiguousPrefix) || family.nameTerms.every(term => productName.includes(term))) &&
+    !family.excludeNameTerms.some(term => productName.includes(term));
+}
+
+function getStockProductFilterRows() {
+  const rowsBySku = new Map((state.rows || []).map(row => [normalizeSku(row.SKU), row]));
+  const rawRowsBySku = new Map();
+
+  if (state.rawJson && state.columnMap) {
+    const map = state.columnMap;
+    state.rawJson.forEach(rawRow => {
+      if (!rawRow) return;
+      const rawSku = rawRow[map.SKU];
+      const sku = String(rawSku || "").trim();
+      const skuKey = normalizeSku(sku);
+      if (!skuKey || rowsBySku.has(skuKey)) return;
+
+      let row = rawRowsBySku.get(skuKey);
+      if (!row) {
+        row = {
+          SKU: sku.toUpperCase(),
+          Producto: sanitizeProductName(rawRow[map.Producto]) || sku,
+          Inventario: 0,
+          _stockFilterOnly: true
+        };
+        rawRowsBySku.set(skuKey, row);
+      }
+
+      const rawInventory = rawRow[map.Inventario];
+      const inventory = rawInventory === undefined || rawInventory === null || rawInventory === ""
+        ? 0
+        : toNum(String(rawInventory).trim());
+      if (Number.isFinite(inventory) && inventory > 0) row.Inventario += inventory;
+    });
+  }
+
+  const rulesBySku = new Map(Object.entries(state.adminRules || {}).map(([sku, rule]) => [normalizeSku(sku), rule]));
+  const pricesBySku = new Map(Object.entries(state.preciosLookup || {}).map(([sku, price]) => [normalizeSku(sku), price]));
+  const missingRows = Array.from(rawRowsBySku.entries(), ([skuKey, row]) => {
+    const rule = rulesBySku.get(skuKey) || {};
+    return {
+      ...row,
+      CostoUnitario: pricesBySku.get(skuKey) ?? null,
+      Minimo: rule.minimo ?? "",
+      Maximo: rule.maximo ?? "",
+      PedidoSugerido: null,
+      CostoTotal: null,
+      Exceso: 0,
+      Estado: "SIN REGLAS"
+    };
+  });
+
+  return [...rowsBySku.values(), ...missingRows];
+}
+
+function getAvailableStockPresentations(families) {
+  const available = new Set();
+  getStockProductFilterRows().forEach(row => {
+    if (!families.some(family => matchesStockProductFamily(row, family))) return;
+    const sku = String(row.SKU || "").toUpperCase().replace(/\s+/g, "");
+    STOCK_PRESENTATION_SUFFIXES.forEach(suffix => {
+      if (sku.endsWith(suffix)) available.add(suffix);
+    });
+  });
+  return available;
+}
+
 if (typeof state.bulkSelection === 'undefined') {
   state.bulkSelection = {
     selectedSKUs: []
@@ -358,6 +469,16 @@ function renderTableDynamic(data, filterType) {
       { key: "CostoUnitario", label: "Costo Un.", sortable: true },
       { key: "CostoTotal", label: "Costo total", sortable: true }
     ];
+  } else if (activeFilter === "stockproducts") {
+    columns = [
+      { key: "SKU", label: "SKU", sortable: true },
+      { key: "Producto", label: "Producto", sortable: false },
+      { key: "Inventario", label: "Inventario", sortable: true },
+      { key: "PedidoSugerido", label: "Cantidad a pedir", sortable: false },
+      { key: "CostoUnitario", label: "Costo Un.", sortable: true },
+      { key: "CostoTotal", label: "Costo total", sortable: true },
+      { key: "AgregarPedido", label: "Acción", sortable: false }
+    ];
   } else if (activeFilter === "exceso") {
     columns = [
       { key: "SKU", label: "SKU", sortable: true },
@@ -433,9 +554,9 @@ function renderTableDynamic(data, filterType) {
   // Para el filtro "pedido", ordenar: primero inventario 0, luego mínimo
   let sortedData = [...data];
   
-  if (activeFilter === "pedido" || activeFilter === "pedir") {
+  if (activeFilter === "pedido" || activeFilter === "pedir" || activeFilter === "stockproducts") {
     // Si el usuario hizo clic en una columna, reordenar según esa columna (incluye Inventario)
-    if (window.sortState.user && window.sortState.column) {
+    if (window.sortState.user && window.sortState.column && window.sortState.filter === activeFilter) {
       // Orden personalizado para Inventario: cuando el usuario alterna, cambiamos entre
       // "mayores primero" y "ceros primero". Para otras columnas, usamos orden genérico.
       if (window.sortState.column === 'Inventario') {
@@ -582,12 +703,15 @@ function renderTableDynamic(data, filterType) {
           displayValue = baseValue;
         }
       }
-      else if (col.key === "PedidoSugerido" && (r.PedidoSugerido > 0 || r.PedidoSugerido === "")) {
+      else if (col.key === "PedidoSugerido" && (activeFilter === "stockproducts" || r.PedidoSugerido > 0 || r.PedidoSugerido === "")) {
         className = "tag-danger";
         displayValue = `<input type="number" class="pedido-sugerido-input" data-sku="${escapeHtml(r.SKU)}" 
-          value="${r.PedidoSugerido === "" ? "" : Math.max(0, Number(r.PedidoSugerido))}" min="0" step="1"
+          value="${r.PedidoSugerido > 0 ? Math.max(0, Number(r.PedidoSugerido)) : ""}" min="1" step="1" placeholder="Cantidad"
           style="width:80px; padding:4px; border:1px solid var(--border); border-radius:6px; text-align: center;" />`;
       } 
+      else if (col.key === "AgregarPedido") {
+        displayValue = `<button type="button" class="btn-secondary stock-product-add-to-order" data-sku="${escapeHtml(r.SKU)}" style="white-space: nowrap;">➕ Enviar al pedido</button>`;
+      }
       else if (col.key === "CostoUnitario") {
         if (value !== null && value !== "" && !isNaN(value) && value > 0) {
           displayValue = `$${fmt(value)}`;
@@ -661,6 +785,10 @@ function renderTableDynamic(data, filterType) {
         e.preventDefault();
       }
     });
+  });
+
+  tbody.querySelectorAll('.stock-product-add-to-order').forEach(button => {
+    button.addEventListener('click', () => addStockProductToPedido(button.getAttribute('data-sku')));
   });
 
   tbody.querySelectorAll('.table-row-select-checkbox').forEach(checkbox => {
@@ -808,6 +936,7 @@ function sortTable(columnKey) {
     }
     window.sortState.user = true;
   }
+  window.sortState.filter = String(state.activeFilter || "todos").toLowerCase();
   resetReportPagination();
   applyFilterAndSearch();
 }
@@ -870,6 +999,43 @@ function handlePedidoSugeridoCommit(event) {
   applyFilterAndSearch();
 }
 
+function addStockProductToPedido(sku) {
+  const keepStockProductFilter = state.activeFilter === "stockProducts" && window.stockProductFilter.active;
+  let row = state.rows.find(item => normalizeSku(item.SKU) === normalizeSku(sku));
+  const quantityInput = Array.from(document.querySelectorAll(".pedido-sugerido-input"))
+    .find(input => normalizeSku(input.getAttribute("data-sku")) === normalizeSku(sku));
+  const cantidad = Number.parseInt(quantityInput?.value, 10);
+
+  if (!row || !Number.isInteger(cantidad) || cantidad < 1) {
+    if (!row) row = getStockProductFilterRows().find(item => normalizeSku(item.SKU) === normalizeSku(sku));
+  }
+
+  if (!row || !Number.isInteger(cantidad) || cantidad < 1) {
+    mostrarNotificacion("Ingresa una cantidad mayor que cero para enviar el producto al pedido.", true);
+    quantityInput?.focus();
+    return;
+  }
+
+  if (!state.rows.includes(row)) state.rows.push(row);
+  row._manual = true;
+  if (state.excludedSKUs?.length) {
+    state.excludedSKUs = state.excludedSKUs.filter(item => normalizeSku(item) !== normalizeSku(sku));
+  }
+
+  handlePedidoSugeridoChange({ target: quantityInput });
+  if (!keepStockProductFilter) {
+    state.activeFilter = "pedido";
+    window.stockProductFilter.active = false;
+    document.querySelectorAll(".filter-chip").forEach(chip => {
+      chip.classList.toggle("active", chip.getAttribute("data-filter") === "pedido");
+    });
+  }
+  resetReportPagination();
+  applyFilterAndSearch();
+  if (typeof updateExportButtonState === "function") updateExportButtonState();
+  mostrarNotificacion(`${row.Producto || sku} agregado al pedido (${cantidad}).`, false);
+}
+
 // ============================================================
 // SECCIÓN 2: FILTROS Y BÚSQUEDA (VERSIÓN CORREGIDA - CON PAGINACIÓN FUNCIONAL)
 // ============================================================
@@ -878,8 +1044,18 @@ function applyFilterAndSearch() {
   const searchTerm = norm(document.getElementById("searchInput")?.value || "");
   const presFilter = document.getElementById("filterPresentation")?.value || "all";
   
-  let filtered = [...state.rows];
   const currentFilter = String(state.activeFilter || "todos").toLowerCase();
+  let filtered = currentFilter === "stockproducts" && window.stockProductFilter.active
+    ? getStockProductFilterRows()
+    : [...state.rows];
+
+  if ((currentFilter === "pedido" || currentFilter === "pedir" || currentFilter === "stockproducts") && window.sortState.filter !== currentFilter) {
+    window.sortState.column = null;
+    window.sortState.direction = "asc";
+    window.sortState.user = false;
+    window.sortState.inventarioDesc = false;
+  }
+  window.sortState.filter = currentFilter;
 
   console.log("🔍 Aplicando filtro:", currentFilter);
   console.log("📊 Total rows ANTES de filtrar:", filtered.length);
@@ -891,7 +1067,16 @@ function applyFilterAndSearch() {
     if (sampleRules) console.log(`🐞 Debug UI - sample SKUs with Min/Max: ${sampleRules}`);
   } catch(e) { console.warn('🐞 Debug UI logging failed', e); }
 
-  if (currentFilter === "pedido" || currentFilter === "pedir") {
+  if (currentFilter === "stockproducts" && window.stockProductFilter.active) {
+    const families = window.stockProductFilter.families;
+    const presentations = window.stockProductFilter.presentations;
+    filtered = filtered.filter(row => {
+      const sku = String(row.SKU || "").toUpperCase().replace(/\s+/g, "");
+      const matchesFamily = families.some(family => matchesStockProductFamily(row, family));
+      const matchesPresentation = presentations.length === 0 || presentations.some(value => sku.endsWith(value.toUpperCase()));
+      return matchesFamily && matchesPresentation;
+    });
+  } else if (currentFilter === "pedido" || currentFilter === "pedir") {
     // ==================== FILTRO DE PEDIDO (NUEVA LÓGICA) ====================
     filtered = filtered.filter(r => {
       if (r.PedidoSugerido <= 0 && r.PedidoSugerido !== "") return false;
@@ -908,43 +1093,6 @@ function applyFilterAndSearch() {
       return true;
     });
 
-    // Ordenar por Inventario cuando el usuario active ese modo
-    if (window.sortState.column === 'Inventario') {
-      if (window.sortState.inventarioDesc) {
-        filtered.sort((a, b) => {
-          const aInv = Number(a.Inventario) || 0;
-          const bInv = Number(b.Inventario) || 0;
-          return bInv - aInv;
-        });
-      } else {
-        filtered.sort((a, b) => {
-          const aInv = Number(a.Inventario) || 0;
-          const bInv = Number(b.Inventario) || 0;
-          return aInv - bInv;
-        });
-      }
-    } else {
-      // Orden por defecto del filtro Pedido
-      filtered.sort((a, b) => {
-        const aZero = a.Inventario === 0;
-        const bZero = b.Inventario === 0;
-        const aMin = isProductoEnMinimo(a);
-        const bMin = isProductoEnMinimo(b);
-        const aManual = a._manual === true;
-        const bManual = b._manual === true;
-
-        if (aManual && !bManual) return -1;
-        if (!aManual && bManual) return 1;
-
-        if (aZero && !bZero) return -1;
-        if (!aZero && bZero) return 1;
-
-        if (aMin && !bMin) return -1;
-        if (!aMin && bMin) return 1;
-
-        return a.SKU.localeCompare(b.SKU);
-      });
-    }
   } else if (currentFilter === "exceso") {
     filtered = filtered.filter(r => {
       const hasMaxRule = (r.Maximo !== "" && r.Maximo !== undefined && r.Maximo !== null);
@@ -960,7 +1108,7 @@ function applyFilterAndSearch() {
     filtered = filtered.filter(r => norm(r.SKU).includes(searchTerm) || norm(r.Producto).includes(searchTerm));
   }
 
-  if (presFilter !== "all") {
+  if (presFilter !== "all" && currentFilter !== "stockproducts") {
     filtered = filtered.filter(r => {
       const skuLower = String(r.SKU || "").toLowerCase().trim();
       if (presFilter === "gal") return skuLower.endsWith("-1");
@@ -968,6 +1116,16 @@ function applyFilterAndSearch() {
       if (presFilter === "1/4") return skuLower.endsWith("-1/4");
       if (presFilter === "bot") return skuLower.endsWith("-bot");
       return true;
+    });
+  }
+
+  const isInventoryOrderedFilter = currentFilter === "pedido" || currentFilter === "pedir" || currentFilter === "stockproducts";
+  const hasManualSort = window.sortState.user && window.sortState.column && window.sortState.filter === currentFilter;
+  if (isInventoryOrderedFilter && (!hasManualSort || window.sortState.column === "Inventario")) {
+    const descending = hasManualSort && window.sortState.column === "Inventario" && window.sortState.inventarioDesc;
+    filtered.sort((a, b) => {
+      const difference = (Number(a.Inventario) || 0) - (Number(b.Inventario) || 0);
+      return (descending ? -difference : difference) || String(a.SKU || "").localeCompare(String(b.SKU || ""));
     });
   }
 
@@ -981,7 +1139,8 @@ function applyFilterAndSearch() {
   const filterInfo = document.getElementById("filterInfo");
   if (filterInfo) {
     let filterText = "";
-    if (currentFilter === "all" || currentFilter === "todos") filterText = "Mostrando todos los productos";
+    if (currentFilter === "stockproducts") filterText = `📦 Existencias por línea (${filtered.length} producto${filtered.length === 1 ? "" : "s"})`;
+    else if (currentFilter === "all" || currentFilter === "todos") filterText = "Mostrando todos los productos";
     else if (currentFilter === "pedido" || currentFilter === "pedir") {
       let tipoFiltro = "";
       if (window.inventoryPedidoFilter.includeZero && !window.inventoryPedidoFilter.includeAtMin) {
@@ -1193,6 +1352,7 @@ function renderSearchResults(results) {
 
 // FUNCIÓN CORREGIDA - AHORA SÍ AGREGA LOS PRODUCTOS CON PRECIO Y FORZA INVENTARIO A 0
 async function addProductToPedido() {
+  const keepStockProductFilter = state.activeFilter === "stockProducts" && window.stockProductFilter.active;
   if (!selectedProductForOrder) {
     setStatus("Selecciona un producto primero.", true);
     return;
@@ -1333,16 +1493,19 @@ async function addProductToPedido() {
   
   // 4. NO LLAMAR A recalculateRows() - SOLO ACTUALIZAR LA TABLA
   
-  // 5. Cambiar al filtro de pedido
-  state.activeFilter = "pedido";
-  const chips = document.querySelectorAll(".filter-chip");
-  chips.forEach(chip => {
-    if (chip.getAttribute("data-filter") === "pedido") {
-      chip.classList.add("active");
-    } else {
-      chip.classList.remove("active");
-    }
-  });
+  // 5. Mantener el filtro de familia al agregar; en los demás casos mostrar pedido.
+  if (!keepStockProductFilter) {
+    state.activeFilter = "pedido";
+    window.stockProductFilter.active = false;
+    const chips = document.querySelectorAll(".filter-chip");
+    chips.forEach(chip => {
+      if (chip.getAttribute("data-filter") === "pedido") {
+        chip.classList.add("active");
+      } else {
+        chip.classList.remove("active");
+      }
+    });
+  }
   
   // 6. Resetear paginación
   resetReportPagination();
@@ -1463,7 +1626,8 @@ function renderAdminTable(data) {
   document.querySelectorAll('.producto-edit-input').forEach(input => {
     input.addEventListener('change', function(e) {
       const sku = this.getAttribute('data-sku');
-      const nuevoNombre = this.value.trim();
+      const nuevoNombre = sanitizeProductName(this.value);
+      this.value = nuevoNombre;
       
       if (!nuevoNombre) {
         mostrarNotificacion("⚠️ El nombre no puede estar vacío", true);
@@ -1539,14 +1703,7 @@ function renderAdminTable(data) {
   document.querySelectorAll('[data-delete-sku]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const sku = btn.getAttribute('data-delete-sku');
-      if (await mostrarConfirmacion(`Eliminar reglas para el SKU "${sku}"?`)) {
-        delete state.adminRules[sku];
-        persistRules();
-        recalculateRows();
-        applyAdminFilter();
-        updateReglasStatusDisplay();
-        setStatus(`Reglas eliminadas para ${sku}`);
-      }
+      await deleteAdminSku(sku);
     });
   });
 }

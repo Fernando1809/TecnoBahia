@@ -13,13 +13,13 @@
     });
   </script>
   <script src="js/state.js?v=2"></script>
-  <script src="js/utils.js?v=2"></script>
-  <script src="js/engine.js?v=2"></script>    
-  <script src="js/ui.js?v=3"></script>
-  <script src="js/admin.js?v=6"></script>
+  <script src="js/utils.js?v=3"></script>
+  <script src="js/engine.js?v=3"></script>
+  <script src="js/ui.js?v=13"></script>
+  <script src="js/admin.js?v=7"></script>
   <script src="js/app.js?v=3"></script>
 </head>
-<body>
+<body class="session-pending">
   <div class="corner-menu" aria-label="Menú principal">
     <button type="button" id="darkModeToggle" class="dark-mode-btn" aria-label="Cambiar tema">
       🌙 Modo oscuro
@@ -32,16 +32,41 @@
 
   <div class="container">
     
-    <div id="viewLogin" class="card">
+    <div id="viewLogin" class="card hidden">
       <div style="text-align: center; margin-bottom: 20px;">
         <h1 style="margin-bottom: 8px;">🔐 Tecno Bahía</h1>
-        <p style="color: var(--muted); margin: 0;">Control de Inventarios y Gestión de Pedidos</p>
+        <p style="color: var(--muted); margin: 0;">AUXILIARES DE CONTROL DE PEDIDOS, GENERACION DE REPORTES Y CONVERSOR DE FORMATOS</p>
       </div>
       <div class="admin-lock" style="display: flex; flex-direction: column; gap: 12px; max-width: 340px; margin: 0 auto; padding: 10px 0;">
         <input type="email" id="usuarioEmail" placeholder="Correo electrónico" required style="width: 100%; padding: 10px; box-sizing: border-box;" />
         <input type="password" id="usuarioPass" placeholder="Contraseña" required style="width: 100%; padding: 10px; box-sizing: border-box;" />
         <button id="btnIngresar" class="btn-secondary" style="width: 100%; padding: 10px; font-weight: bold;">🔑 Ingresar al sistema</button>
         <div id="status" class="status-msg" style="text-align: center;"></div>
+      </div>
+    </div>
+
+    <div id="viewModules" class="card hidden">
+      <div class="module-heading">
+        <h1>¿Qué deseas hacer?</h1>
+        <p>Selecciona el auxiliar que necesitas utilizar.</p>
+      </div>
+      <div class="module-grid">
+        <button id="btnOpenPedidos" class="module-choice" type="button">
+          <span class="module-icon" aria-hidden="true">📦</span>
+          <span class="module-copy">
+            <strong>Auxiliar de pedidos</strong>
+            <span>Inventario, existencias y generación de pedidos</span>
+          </span>
+          <span class="module-arrow" aria-hidden="true">→</span>
+        </button>
+        <button id="btnOpenReportes" class="module-choice" type="button">
+          <span class="module-icon" aria-hidden="true">📊</span>
+          <span class="module-copy">
+            <strong>Auxiliar de reportes</strong>
+            <span>Consolidación de ventas, órdenes, CDP y promociones</span>
+          </span>
+          <span class="module-arrow" aria-hidden="true">→</span>
+        </button>
       </div>
     </div>
 
@@ -102,6 +127,44 @@
         
         <div class="row" style="margin: 12px 0; gap: 12px; align-items: center; flex-wrap: wrap;">
           <button id="btnAddProductToOrder" class="btn-secondary" style="background: var(--primary); color: white;">➕ Agregar producto a pedido</button>
+          <div class="stock-filter-wrap">
+            <button id="btnStockProductFilter" class="btn-secondary" type="button" aria-expanded="false" aria-controls="stockProductFilterPanel">📦 Filtrar existencias</button>
+            <div id="stockProductFilterPanel" class="stock-filter-panel" hidden>
+              <fieldset>
+                <legend>Línea de producto</legend>
+                <label><input type="checkbox" data-stock-prefix="B5" data-stock-name="excello|latex" data-stock-require-name="true"> Excello latex (B5)</label>
+                <label><input type="checkbox" data-stock-prefix="K53" data-stock-name="peninsular|latex"> Peninsular Latex (K53)</label>
+                <label><input type="checkbox" data-stock-prefix="Y81" data-stock-name="coloramica|latex"> Coloramica Latex (Y81)</label>
+                <label><input type="checkbox" data-stock-prefix="Y82" data-stock-name="coloramica|esmalte"> Coloramica Esmalte (Y82)</label>
+                <label><input type="checkbox" data-stock-prefix="N77" data-stock-name="anticorrosivo|coloramica"> Anticorrosivo Coloramica (N77)</label>
+                <label><input type="checkbox" data-stock-prefix="K62" data-stock-name="anticorrosivo|2000"> Anticorrosivo 2000 (K62)</label>
+                <label><input type="checkbox" data-stock-prefix="E67,E62" data-stock-name="kem|direct" data-stock-exclude-name="metal"> Kem Direct (E67 / E62)</label>
+                <label><input type="checkbox" data-stock-prefix="A5" data-stock-name="aqualock"> Aqualock (A5)</label>
+                <label><input type="checkbox" data-stock-prefix="B66,E62,E67" data-stock-name="kem|direct|metal"> Kem Direct-to-Metal (B66 / E62 / E67)</label>
+                <label><input type="checkbox" data-stock-pattern="^R\d+K\d+-(?:1|BOT)$"> Solventes (RXKX-1 / RXKX-BOT)</label>
+                <label><input type="checkbox" data-stock-prefix="D3" data-stock-name="masilla|nitrocelulosica"> Masilla Nitrocelulósica (D3)</label>
+                <label><input type="checkbox" data-stock-prefix="D2" data-stock-name="masilla|jet|bond"> Masilla Jet Bond (D2)</label>
+                <label><input type="checkbox" data-stock-prefix="S6" data-stock-name="tinte|thinner"> Madera: Tinte Al Thinner (S6)</label>
+                <label><input type="checkbox" data-stock-prefix="A3" data-stock-name="flo|lac"> Madera: Flo Lac (A3)</label>
+                <label><input type="checkbox" data-stock-prefix="T60" data-stock-name="sellador|nitro"> Madera: Sellador Nitro (T60)</label>
+              </fieldset>
+              <fieldset>
+                <legend>Presentación</legend>
+                <span id="stockPresentationEmpty" style="color: var(--muted); font-size: 12px;">Selecciona una familia.</span>
+                <div id="stockPresentationOptions" style="display: contents;">
+                  <label hidden><input type="checkbox" data-stock-presentation="-1"> Gal (-1)</label>
+                  <label hidden><input type="checkbox" data-stock-presentation="-5"> Cub (-5)</label>
+                  <label hidden><input type="checkbox" data-stock-presentation="-1/4"> 1/4 gal (-1/4)</label>
+                  <label hidden><input type="checkbox" data-stock-presentation="-bot"> Botella (-BOT)</label>
+                </div>
+              </fieldset>
+              <div class="stock-filter-actions">
+                <span id="stockProductFilterMessage" role="status"></span>
+                <button id="btnClearStockProductFilter" class="btn-secondary" type="button">Limpiar</button>
+                <button id="btnApplyStockProductFilter" class="btn-secondary" type="button" style="background: var(--primary); color: white;">Aplicar</button>
+              </div>
+            </div>
+          </div>
           <div class="color-legend">
             <span><span class="legend-dot legend-red"></span> 0 stock</span>
             <span><span class="legend-dot legend-orange"></span> Requiere pedido</span>
@@ -397,6 +460,7 @@
       chips.forEach(chip => {
         chip.addEventListener("click", () => {
           const filterValue = chip.getAttribute("data-filter");
+          window.stockProductFilter.active = false;
           state.activeFilter = filterValue;
           chips.forEach(c => c.classList.remove("active"));
           chip.classList.add("active");
@@ -444,6 +508,77 @@
     document.getElementById("btnCloseModal")?.addEventListener("click", closeAddProductModal);
     document.getElementById("btnConfirmAddProduct")?.addEventListener("click", addProductToPedido);
     document.getElementById("btnClearAllItems")?.addEventListener("click", clearAllItems);
+
+    const stockFilterButton = document.getElementById("btnStockProductFilter");
+    const stockFilterPanel = document.getElementById("stockProductFilterPanel");
+    const stockFilterMessage = document.getElementById("stockProductFilterMessage");
+    const stockPresentationEmpty = document.getElementById("stockPresentationEmpty");
+    function updateStockPresentationOptions() {
+      const selectedFamilies = Array.from(
+        stockFilterPanel.querySelectorAll("input[data-stock-prefix]:checked, input[data-stock-pattern]:checked"),
+        getStockProductFamily
+      );
+      const availablePresentations = getAvailableStockPresentations(selectedFamilies);
+
+      stockFilterPanel.querySelectorAll("[data-stock-presentation]").forEach(input => {
+        const optionAvailable = availablePresentations.has(input.dataset.stockPresentation.toUpperCase());
+        input.closest("label").hidden = !optionAvailable;
+        if (!optionAvailable) input.checked = false;
+      });
+
+      stockPresentationEmpty.hidden = availablePresentations.size > 0;
+      if (selectedFamilies.length === 0) {
+        stockPresentationEmpty.textContent = "Selecciona una familia.";
+      } else if (availablePresentations.size === 0) {
+        stockPresentationEmpty.textContent = "No hay presentaciones disponibles.";
+      }
+    }
+
+    stockFilterPanel.querySelectorAll("input[data-stock-prefix], input[data-stock-pattern]").forEach(input => {
+      input.addEventListener("change", updateStockPresentationOptions);
+    });
+    stockFilterButton?.addEventListener("click", () => {
+      const isOpen = !stockFilterPanel.hidden;
+      stockFilterPanel.hidden = isOpen;
+      stockFilterButton.setAttribute("aria-expanded", String(!isOpen));
+      if (!isOpen) updateStockPresentationOptions();
+    });
+    document.getElementById("btnApplyStockProductFilter")?.addEventListener("click", () => {
+      const selectedFamilies = Array.from(
+        stockFilterPanel.querySelectorAll("input[data-stock-prefix]:checked, input[data-stock-pattern]:checked"),
+        getStockProductFamily
+      );
+      if (!selectedFamilies.length) {
+        stockFilterMessage.textContent = "Selecciona al menos una línea.";
+        return;
+      }
+      window.stockProductFilter = {
+        active: true,
+        families: selectedFamilies,
+        presentations: Array.from(stockFilterPanel.querySelectorAll("[data-stock-presentation]:checked"), input => input.dataset.stockPresentation)
+      };
+      state.activeFilter = "stockProducts";
+      document.querySelectorAll(".filter-chip").forEach(chip => chip.classList.remove("active"));
+      stockFilterMessage.textContent = "";
+      resetReportPagination();
+      applyFilterAndSearch();
+      stockFilterPanel.hidden = true;
+      stockFilterButton.setAttribute("aria-expanded", "false");
+    });
+    document.getElementById("btnClearStockProductFilter")?.addEventListener("click", () => {
+      stockFilterPanel.querySelectorAll("input[type=checkbox]").forEach(input => { input.checked = false; });
+      updateStockPresentationOptions();
+      window.stockProductFilter = { active: false, families: [], presentations: [] };
+      state.activeFilter = "pedido";
+      document.querySelectorAll(".filter-chip").forEach(chip => {
+        chip.classList.toggle("active", chip.getAttribute("data-filter") === "pedido");
+      });
+      stockFilterMessage.textContent = "";
+      resetReportPagination();
+      applyFilterAndSearch();
+      stockFilterPanel.hidden = true;
+      stockFilterButton.setAttribute("aria-expanded", "false");
+    });
     
     // Event listener para el select de filtro por inventario
     document.getElementById("inventoryPedidoSelect")?.addEventListener("change", (e) => {
@@ -460,6 +595,11 @@
 
     document.getElementById("usuarioEmail")?.addEventListener("keypress", (e) => { if (e.key === "Enter") unlockAdminPanel(); });
     document.getElementById("usuarioPass")?.addEventListener("keypress", (e) => { if (e.key === "Enter") unlockAdminPanel(); });
+    document.getElementById("btnOpenPedidos")?.addEventListener("click", openPedidosAuxiliary);
+    document.getElementById("btnOpenReportes")?.addEventListener("click", () => {
+      if (!state.userRole) return showView("login");
+      window.location.href = "./reportes/index.html";
+    });
 
     function toggleCornerMenu(e) { 
       e.stopPropagation(); 
@@ -475,8 +615,9 @@
     }
 
     function showView(which) {
+      if (which !== "login" && !state.userRole) which = "login";
       state.currentView = which;
-      if (which !== "login") persistSettings(); 
+      if (which === "report" || which === "admin") persistSettings();
 
       if (which === "report" && !state.inventoryLoaded && (state.activeFilter === "pedido" || state.activeFilter === "pedir")) {
         state.activeFilter = "all";
@@ -487,15 +628,19 @@
       }
       
       const loginView = document.getElementById("viewLogin");
+      const modulesView = document.getElementById("viewModules");
       const reportView = document.getElementById("viewReport");
       const adminView = document.getElementById("viewAdmin");
       
       loginView?.classList.add("hidden");
+      modulesView?.classList.add("hidden");
       reportView?.classList.add("hidden");
       adminView?.classList.add("hidden");
       
       if (which === "login") {
         loginView?.classList.remove("hidden");
+      } else if (which === "modules") {
+        modulesView?.classList.remove("hidden");
       } else if (which === "report") {
         reportView?.classList.remove("hidden");
       } else if (which === "admin" && state.adminUnlocked) {
@@ -507,6 +652,7 @@
       } else {
         reportView?.classList.remove("hidden");
       }
+      if (state.userRole) renderNavigationMenu(state.userRole);
       closeCornerMenu();
       setTimeout(applyChipStyles, 50);
     }
@@ -517,27 +663,52 @@
       if(wrap && !wrap.contains(e.target)) closeCornerMenu(); 
     });
 
+    let authenticatedDataUid = null;
+    let authenticatedDataPromise = null;
+
+    async function loadAuthenticatedData(user) {
+      if (!user) throw new Error("No hay una sesión activa.");
+      if (authenticatedDataUid === user.uid && authenticatedDataPromise) return authenticatedDataPromise;
+      authenticatedDataUid = user.uid;
+
+      authenticatedDataPromise = (async () => {
+        await loadSettings();
+        initDarkMode();
+        console.log("✅ Settings cargados, modo oscuro:", state.darkMode);
+        await loadRules();
+        console.log("✅ Reglas cargadas:", Object.keys(state.adminRules).length);
+        if (typeof loadPedidoMemoria === "function") await loadPedidoMemoria();
+        await loadListaCompleta();
+        console.log("✅ Datos de pedidos cargados");
+        updateExportButtonState();
+        if (typeof applyAdminFilter === "function") applyAdminFilter();
+      })();
+
+      try {
+        await authenticatedDataPromise;
+      } catch (error) {
+        authenticatedDataUid = null;
+        authenticatedDataPromise = null;
+        throw error;
+      }
+    }
+
+    async function openPedidosAuxiliary() {
+      const user = window.auth?.currentUser;
+      if (!user || !state.userRole) return showView("login");
+      showView("report");
+      try {
+        await loadAuthenticatedData(user);
+      } catch (error) {
+        console.error("No se pudieron cargar los datos de pedidos:", error);
+      }
+    }
+
     async function initApp() {
       console.log("🚀 Iniciando aplicación...");
-      
-      await window.firebaseReady; 
-      console.log("✅ Firebase listo");
-      
-      await loadSettings();
-      console.log("✅ Settings cargados, modo oscuro:", state.darkMode);
-      
-      await loadRules();
-      console.log("✅ Reglas cargadas:", Object.keys(state.adminRules).length);
 
-      if (typeof loadPedidoMemoria === "function") {
-        await loadPedidoMemoria();
-        console.log("✅ Memoria de pedidos cargada");
-      }
-      
-      await loadListaCompleta();
-      console.log("✅ Lista completa cargada");
-      
-      updateExportButtonState();
+      await window.firebaseReady;
+      console.log("✅ Firebase listo");
       setupFilterChips();
       setupAdminFilterChips();
       initDarkMode();
@@ -591,28 +762,22 @@
     window.onAuthStateChanged(window.auth, async (user) => {
       console.log("🔐 onAuthStateChanged - Usuario:", user ? user.email : "No logueado");
       console.log("📱 Vista actual en state:", state.currentView);
+      document.body.classList.remove("session-pending");
       
       if (user) {
+        state.userRole = "usuario";
+        state.adminUnlocked = false;
+        renderNavigationMenu(state.userRole);
+        showView("modules");
+        void loadAuthenticatedData(user).catch(error => console.error("Error cargando datos de pedidos:", error));
+
         const rol = await getUserRole(user.uid, user.email);
         state.userRole = rol;
         state.adminUnlocked = (rol === "admin");
         renderNavigationMenu(rol);
-        
-        if (rol === "admin") {
-          const savedView = localStorage.getItem('tecnobahia_currentview');
-          const targetView = (savedView === "admin" && state.adminUnlocked) ? "admin" : "report";
-          console.log("👑 Admin - Mostrando vista guardada:", targetView);
-          showView(targetView);
-          setTimeout(() => {
-            if (typeof applyAdminFilter === "function") applyAdminFilter();
-          }, 300);
-        } else {
-          console.log("👤 Usuario normal - Mostrando reporte");
-          state.currentView = "report";
-          persistSettings();
-          showView("report");
-        }
       } else {
+        authenticatedDataUid = null;
+        authenticatedDataPromise = null;
         state.adminUnlocked = false;
         state.userRole = null;
         renderNavigationMenu(null);
@@ -629,7 +794,6 @@
       }, 100);
     });
   </script>
-</body>
 <footer style="
   text-align: center;
   padding: 18px 10px;
@@ -639,4 +803,5 @@
 ">
   Developed by <strong>FG</strong>
 </footer>
+</body>
 </html>

@@ -203,7 +203,7 @@ function recalculateRows() {
       // Obtener producto del inventario
       let productoInventario = "";
       if (r[map.Producto] !== undefined && r[map.Producto] !== null && r[map.Producto] !== "") {
-        productoInventario = String(r[map.Producto]).trim();
+        productoInventario = sanitizeProductName(r[map.Producto]);
       }
 
       // Obtener inventario
@@ -267,7 +267,7 @@ function recalculateRows() {
     for (const item of state.listaCompleta) {
       const skuKey = normalizeSku(item.CODIGO);
       if (item.CODIGO && !nombresMap[skuKey]) {
-        nombresMap[skuKey] = item.DESCRIPCION || item.CODIGO;
+        nombresMap[skuKey] = sanitizeProductName(item.DESCRIPCION || item.CODIGO);
       }
     }
     console.log("📊 Nombres cargados desde listaCompleta (fallback):", Object.keys(nombresMap).length);
@@ -320,7 +320,7 @@ function recalculateRows() {
 
     const reglaItem = reglasIndex[itemKey] || {};
     if (reglaItem.producto) {
-      nombreFinal = reglaItem.producto.trim();
+      nombreFinal = sanitizeProductName(reglaItem.producto);
     }
 
     if (!nombreFinal && nombresMap[itemKey]) {
@@ -328,7 +328,7 @@ function recalculateRows() {
     }
 
     if (!nombreFinal && item.producto) {
-      nombreFinal = item.producto;
+      nombreFinal = sanitizeProductName(item.producto);
     }
 
     if (!nombreFinal) {
@@ -445,9 +445,9 @@ function recalculateRows() {
   // Va DESPUÉS de reinsertar los manuales: si un producto manual también
   // fue purgado, debe quedar fuera igual, no reaparecer.
   if (state.excludedSKUs && state.excludedSKUs.length > 0) {
-    const excludedSet = new Set(state.excludedSKUs);
+    const excludedSet = new Set(state.excludedSKUs.map(normalizeSku));
     const antes = state.rows.length;
-    state.rows = state.rows.filter(r => !excludedSet.has(r.SKU));
+    state.rows = state.rows.filter(r => !excludedSet.has(normalizeSku(r.SKU)));
     console.log(`🚫 Productos purgados respetados tras recalcular: ${antes - state.rows.length}`);
   }
 

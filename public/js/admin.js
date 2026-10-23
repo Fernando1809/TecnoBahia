@@ -240,13 +240,23 @@ function renderNavigationMenu(rol) {
   menuBtn.style.display = "block"; 
   dropdown.innerHTML = ""; 
 
-  if (rol === "admin") {
+  const modulesView = document.getElementById("viewModules");
+  const isModuleSelection = modulesView && !modulesView.classList.contains("hidden");
+
+  if (isModuleSelection) {
     dropdown.innerHTML = `
+      <button type="button" id="btnLogout" role="menuitem" style="color: var(--danger);">🚪 Cerrar sesión</button>
+    `;
+  } else if (rol === "admin") {
+    dropdown.innerHTML = `
+      <button type="button" id="navToModules" role="menuitem">🏠 Seleccionar auxiliar</button>
       <button type="button" id="navToAdmin" role="menuitem">⚙️ Panel Admin</button>
       <button type="button" id="navToReport" role="menuitem">📊 Reporte Inventario</button>
       <hr style="border: none; border-top: 1px solid var(--border); margin: 6px 0;">
       <button type="button" id="btnLogout" role="menuitem" style="color: var(--danger);">🚪 Cerrar sesión</button>
     `;
+
+    document.getElementById("navToModules")?.addEventListener("click", () => showView("modules"));
     
     document.getElementById("navToAdmin")?.addEventListener("click", () => {
       state.currentView = "admin";
@@ -260,8 +270,10 @@ function renderNavigationMenu(rol) {
     });
   } else {
     dropdown.innerHTML = `
+      <button type="button" id="navToModules" role="menuitem">🏠 Seleccionar auxiliar</button>
       <button type="button" id="btnLogout" role="menuitem" style="color: var(--danger);">🚪 Cerrar sesión</button>
     `;
+    document.getElementById("navToModules")?.addEventListener("click", () => showView("modules"));
   }
 
   document.getElementById("btnLogout")?.addEventListener("click", logoutAdmin);
@@ -279,20 +291,7 @@ async function unlockAdminPanel() {
 
   try {
     if (statusDiv) statusDiv.textContent = "Verificando accesos...";
-    const userCredential = await window.signInWithEmailAndPassword(window.auth, email, pass);
-    const user = userCredential.user;
-    
-    const rol = await getUserRole(user.uid, user.email);
-    state.userRole = rol;
-    state.adminUnlocked = (rol === "admin");
-
-    renderNavigationMenu(rol);
-    
-    if (rol === "admin") {
-      showView("admin"); 
-    } else {
-      showView("report"); 
-    }
+    await window.signInWithEmailAndPassword(window.auth, email, pass);
 
     document.getElementById('usuarioEmail').value = "";
     document.getElementById('usuarioPass').value = "";
@@ -362,6 +361,12 @@ async function loadRules() {
       if (legacyData && legacyData.adminRules && Object.keys(legacyData.adminRules).length > 0) {
         console.warn("⚠️ Migrando reglas antiguas (sin sucursal) a Jiquilisco por defecto");
         state.adminRulesPorSucursal["Jiquilisco"] = legacyData.adminRules;
+      }
+    }
+
+    for (const sucursal of SUCURSALES) {
+      for (const rule of Object.values(state.adminRulesPorSucursal[sucursal] || {})) {
+        if (rule && rule.producto) rule.producto = sanitizeProductName(rule.producto);
       }
     }
 
@@ -647,6 +652,7 @@ function buildAdminSourceRows() {
     }
     
     const confirmado = state.adminRules[sku]?.confirmado === true;
+    producto = sanitizeProductName(producto);
     
     rows.push({
       SKU: sku,
@@ -804,6 +810,7 @@ async function addNewSku() {
   }
   
   if (!producto) producto = skuTrim;
+  producto = sanitizeProductName(producto) || skuTrim;
   
   let minimo = "";
   let maximo = "";
@@ -840,6 +847,9 @@ async function addNewSku() {
     producto: producto,
     confirmado: false
   };
+  state.excludedSKUs = (state.excludedSKUs || []).filter(excludedSku =>
+    normalizeSku(excludedSku) !== normalizeSku(skuTrim)
+  );
   
   persistRules();
   recalculateRows();
@@ -1046,7 +1056,7 @@ async function importRulesExcel(sucursal) {
         
         let producto = "";
         if (row[prodCol] !== undefined && row[prodCol] !== null && row[prodCol] !== "") {
-          producto = String(row[prodCol]).trim();
+          producto = sanitizeProductName(row[prodCol]);
         }
         
         // minimo/maximo: null = "celda vacía en el Excel" -> borrar la regla existente.
@@ -1207,6 +1217,9 @@ async function loadListaCompleta() {
   try {
     const data = await firestoreGetDocData("listaCompleta");
     state.listaCompleta = data.listaCompleta || [];
+    state.listaCompleta.forEach(item => {
+      item.DESCRIPCION = sanitizeProductName(item.DESCRIPCION || item.CODIGO);
+    });
     state.preciosLookup = data.preciosLookup || {};
     
     const muestra = Object.values(state.preciosLookup).slice(0, 5);
@@ -1447,7 +1460,7 @@ async function importListaCompleta() {
         if (!rowArr.some(v => String(v || "").trim() !== "")) continue;
         
         const codigo = String(rowArr[codigoCol] || "").trim().toUpperCase();
-        const descripcion = descCol !== null ? String(rowArr[descCol] || "").trim() : "";
+        const descripcion = descCol !== null ? sanitizeProductName(rowArr[descCol]) : "";
         
         let precioConIva = 0;
         if (useUnitPrice) {
@@ -1945,6 +1958,35 @@ function downloadMinMaxWithConfirmation() {
 // SECCIÓN 8: RENDER ADMIN TABLE (CON PRODUCTO EDITABLE)
 // ============================================================
 
+async function deleteAdminSku(sku) {
+  if (!await mostrarConfirmacion(`¿Eliminar el SKU "${sku}" de la tabla de mínimos y máximos?`)) return;
+
+  const skuKey = normalizeSku(sku);
+  const previousRule = state.adminRules[sku];
+  const wasExcluded = (state.excludedSKUs || []).some(excludedSku => normalizeSku(excludedSku) === skuKey);
+  delete state.adminRules[sku];
+  state.rows = (state.rows || []).filter(row => normalizeSku(row.SKU) !== skuKey);
+  if (!wasExcluded) {
+    state.excludedSKUs = state.excludedSKUs || [];
+    state.excludedSKUs.push(sku);
+  }
+
+  if (!await persistRules()) {
+    if (previousRule) state.adminRules[sku] = previousRule;
+    if (!wasExcluded) {
+      state.excludedSKUs = state.excludedSKUs.filter(excludedSku => normalizeSku(excludedSku) !== skuKey);
+    }
+    recalculateRows();
+    applyAdminFilter();
+    return;
+  }
+
+  recalculateRows();
+  applyAdminFilter();
+  updateReglasStatusDisplay();
+  setStatus(`✅ SKU "${sku}" eliminado de la tabla de mínimos y máximos`, false);
+}
+
 function renderAdminTable(data) {
   const tbody = document.querySelector("#adminTable tbody");
   if (!tbody) return;
@@ -1985,7 +2027,7 @@ function renderAdminTable(data) {
           ${confirmado ? '✅ Confirmado' : '⬜ Pendiente'}
         </span>
       </td>
-      <td><button class="btn-secondary" style="background:var(--danger); color:white; padding:4px 10px; cursor:pointer; border:none; border-radius:4px; font-size:13px;" data-delete-sku="${escapeHtml(r.SKU)}">🗑</button></td>
+      <td><button class="btn-secondary" style="background:var(--danger); color:white; padding:4px 10px; cursor:pointer; border:none; border-radius:4px; font-size:13px;" data-delete-sku="${escapeHtml(r.SKU)}" title="Eliminar ${escapeHtml(r.SKU)}" aria-label="Eliminar SKU ${escapeHtml(r.SKU)}">🗑</button></td>
     `;
     tbody.appendChild(tr);
   });
@@ -2048,14 +2090,7 @@ function renderAdminTable(data) {
   document.querySelectorAll('[data-delete-sku]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const sku = btn.getAttribute('data-delete-sku');
-      if (await mostrarConfirmacion(`Eliminar reglas para el SKU "${sku}"?`)) {
-        delete state.adminRules[sku];
-        persistRules();
-        recalculateRows();
-        applyAdminFilter();
-        updateReglasStatusDisplay();
-        setStatus(`Reglas eliminadas para ${sku}`);
-      }
+      await deleteAdminSku(sku);
     });
   });
 }
@@ -2066,7 +2101,8 @@ function renderAdminTable(data) {
 
 function guardarNombreProducto(input) {
   const sku = input.getAttribute('data-sku');
-  const nuevoNombre = input.value.trim();
+  const nuevoNombre = sanitizeProductName(input.value);
+  input.value = nuevoNombre;
   
   if (!nuevoNombre) {
     mostrarNotificacion("⚠️ El nombre no puede estar vacío", true);
