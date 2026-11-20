@@ -1156,6 +1156,11 @@ export async function generarReporte(p: GenerarParams): Promise<GenerarResultado
     // (se aceptan abreviaturas: CUB ↔ CUBETA, GAL ↔ GALON).
     const nombreCumple = (item: string, condicion: string[]) => {
       const pal = tokensNombre(item);
+      const modelosAqualock = condicion.filter((token) => token === "8000" || token === "6000");
+      if (condicion.includes("AQUALOCK") && modelosAqualock.length > 1) {
+        // Aqualock 8000 y 6000 son alternativas; el nombre del artículo puede incluir otros descriptores.
+        return pal.includes("AQUALOCK") && modelosAqualock.some((modelo) => pal.includes(modelo));
+      }
       return condicion.every((c) => pal.some((w) => w.startsWith(c) || c.startsWith(w)));
     };
     const sinCondicion = new Set<string>();

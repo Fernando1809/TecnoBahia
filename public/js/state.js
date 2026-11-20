@@ -11,7 +11,7 @@ const state = {
   sucursalActiva: null,
   // Metadata (fecha/nombre de archivo) del último import de reglas, por sucursal
   reglasMeta: { "Jiquilisco": {}, "Usulután": {} },
-  // Memoria del último pedido generado, por sucursal (solo identificadores/SKUs)
+  // Memoria del último pedido por sucursal (productos, cantidades y fechas)
   pedidoMemoriaPorSucursal: { "Jiquilisco": null, "Usulután": null },
   adminUnlocked: false,
   userRole: null,

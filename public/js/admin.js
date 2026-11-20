@@ -290,6 +290,7 @@ async function unlockAdminPanel() {
   }
 
   try {
+    window.__explicitSignInProvider = "password";
     if (statusDiv) statusDiv.textContent = "Verificando accesos...";
     await window.signInWithEmailAndPassword(window.auth, email, pass);
 
@@ -297,6 +298,7 @@ async function unlockAdminPanel() {
     document.getElementById('usuarioPass').value = "";
     if (statusDiv) statusDiv.textContent = "";
   } catch (error) {
+    if (window.__explicitSignInProvider === "password") window.__explicitSignInProvider = null;
     if (statusDiv) statusDiv.textContent = "❌ Credenciales incorrectas.";
     console.error(error);
   }
@@ -500,17 +502,57 @@ async function persistRules() {
 // ============================================================
 
 /**
- * Carga desde Firestore la memoria del último pedido generado para cada
- * sucursal (solo identificadores de SKU, no el detalle completo).
+ * Carga desde Firestore el detalle del último pedido generado para cada sucursal.
  */
 async function loadPedidoMemoria() {
   state.pedidoMemoriaPorSucursal = state.pedidoMemoriaPorSucursal || {};
   for (const sucursal of SUCURSALES) {
     const slug = slugSucursal(sucursal);
     const data = await firestoreGetDocData(`pedidoMemoria_${slug}`);
-    state.pedidoMemoriaPorSucursal[sucursal] = (data && data.skus && data.skus.length) ? data : null;
+    state.pedidoMemoriaPorSucursal[sucursal] = (data && ((data.skus && data.skus.length) || (data.items && data.items.length))) ? data : null;
   }
   console.log("🕘 Memoria de pedidos cargada:", state.pedidoMemoriaPorSucursal);
+}
+
+function getPedidoMemoriaItems(memoria) {
+  if (!memoria) return [];
+  if (Array.isArray(memoria.items) && memoria.items.length) {
+    return memoria.items.map(item => ({
+      sku: String(item.sku || "").trim().toUpperCase(),
+      producto: String(item.producto || ""),
+      cantidad: Number(item.cantidad) || 0,
+      fecha: item.fecha || memoria.fecha || null,
+      adicional: item.adicional === true
+    })).filter(item => item.sku);
+  }
+
+  const cantidades = new Map(
+    Object.entries(memoria.cantidades || {}).map(([sku, cantidad]) => [String(sku).trim().toUpperCase(), cantidad])
+  );
+  return (Array.isArray(memoria.skus) ? memoria.skus : []).map(sku => {
+    const skuNormalizado = String(sku || "").trim().toUpperCase();
+    const row = (state.rows || []).find(item => String(item.SKU || "").trim().toUpperCase() === skuNormalizado);
+    return {
+      sku: skuNormalizado,
+      producto: row?.Producto || state.adminRules?.[skuNormalizado]?.producto || "",
+      cantidad: Number(cantidades.get(skuNormalizado)) || 0,
+      fecha: memoria.fecha || null,
+      adicional: false
+    };
+  }).filter(item => item.sku);
+}
+
+function formatPedidoDate(fecha) {
+  if (!fecha) return "Fecha no disponible";
+  const date = new Date(fecha);
+  if (Number.isNaN(date.getTime())) return "Fecha no disponible";
+  return date.toLocaleString("es-SV", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 
 function getPedidoAnteriorSet(sucursal) {
@@ -519,7 +561,11 @@ function getPedidoAnteriorSet(sucursal) {
 
   // Retornar Map con SKU -> cantidad para acceso rápido
   const map = new Map();
-  if (memoria.cantidades && typeof memoria.cantidades === 'object') {
+  if (Array.isArray(memoria.items) && memoria.items.length) {
+    memoria.items.forEach(item => {
+      if (item.sku) map.set(String(item.sku).trim().toUpperCase(), Number(item.cantidad) || 0);
+    });
+  } else if (memoria.cantidades && typeof memoria.cantidades === 'object') {
     // Nueva estructura con cantidades
     Object.entries(memoria.cantidades).forEach(([sku, cantidad]) => {
       if (sku) {
@@ -538,8 +584,7 @@ function getPedidoAnteriorSet(sucursal) {
 }
 
 /**
- * Muestra (vía notificación) qué SKUs se pidieron la última vez para esta
- * sucursal, si existe memoria previa. No bloquea la generación del pedido actual.
+ * Muestra un resumen de los SKUs pedidos la última vez para esta sucursal.
  */
 function mostrarMemoriaPedidoAnterior(sucursal) {
   const memoria = state.pedidoMemoriaPorSucursal ? state.pedidoMemoriaPorSucursal[sucursal] : null;
@@ -569,30 +614,74 @@ function mostrarMemoriaPedidoAnterior(sucursal) {
   mostrarNotificacion(`🕘 Pedido anterior de ${sucursal} (${fecha}): ${memoria.skus.length} productos → ${preview}${resto}`, false);
 }
 
+function mostrarPedidoGuardado() {
+  const sucursal = state.inventoryOrigin || state.sucursalActiva || "Jiquilisco";
+  const memoria = state.pedidoMemoriaPorSucursal?.[sucursal];
+  const modal = document.getElementById("savedOrderModal");
+  const body = document.getElementById("savedOrderBody");
+  const summary = document.getElementById("savedOrderSummary");
+  if (!modal || !body || !summary) return;
+
+  const items = getPedidoMemoriaItems(memoria);
+  if (!items.length) {
+    mostrarNotificacion(`No hay un pedido guardado para ${sucursal}.`, true);
+    return;
+  }
+
+  summary.textContent = `Pedido de ${sucursal} · actualizado ${formatPedidoDate(memoria.fecha)} · ${items.length} productos`;
+  body.innerHTML = items.map(item => `
+    <tr>
+      <td>${escapeHtml(item.sku)}</td>
+      <td>${escapeHtml(item.producto || "—")}</td>
+      <td style="text-align:right;">${item.cantidad}</td>
+      <td>${escapeHtml(formatPedidoDate(item.fecha))}</td>
+      <td>${item.adicional ? "Adicional" : "Pedido"}</td>
+    </tr>
+  `).join("");
+  modal.style.display = "flex";
+}
+
+function cerrarPedidoGuardado() {
+  const modal = document.getElementById("savedOrderModal");
+  if (modal) modal.style.display = "none";
+}
+
 /**
  * Guarda en memoria (state + Firestore) el pedido nuevo o lo acumula al anterior.
  */
 async function guardarMemoriaPedidoActual(sucursal, productsToOrder, tipoPedido = "nuevo") {
-  const cantidadPorSKU = {};
+  const fechaActual = new Date().toISOString();
+  const memoriaAnterior = tipoPedido === "agregado"
+    ? state.pedidoMemoriaPorSucursal?.[sucursal]
+    : null;
+  const itemsPorSKU = new Map(
+    getPedidoMemoriaItems(memoriaAnterior).map(item => [item.sku, { ...item }])
+  );
 
-  if (tipoPedido === "agregado") {
-    getPedidoAnteriorSet(sucursal).forEach((cantidad, sku) => {
-      cantidadPorSKU[sku] = Number(cantidad) || 0;
+  (productsToOrder || []).forEach(product => {
+    if (!product.SKU) return;
+    const sku = String(product.SKU).trim().toUpperCase();
+    const cantidadNueva = Number(product.PedidoSugerido) || 0;
+    if (!cantidadNueva) return;
+    const itemAnterior = itemsPorSKU.get(sku);
+    itemsPorSKU.set(sku, {
+      sku,
+      producto: String(product.Producto || itemAnterior?.producto || ""),
+      cantidad: (itemAnterior?.cantidad || 0) + cantidadNueva,
+      fecha: fechaActual,
+      adicional: product._manual === true || itemAnterior?.adicional === true
     });
-  }
-
-  (productsToOrder || []).forEach(p => {
-    if (p.SKU) {
-      const sku = String(p.SKU).trim().toUpperCase();
-      cantidadPorSKU[sku] = (Number(cantidadPorSKU[sku]) || 0) + (Number(p.PedidoSugerido) || 0);
-    }
   });
 
-  const skus = Object.keys(cantidadPorSKU);
+  const items = Array.from(itemsPorSKU.values());
+  const cantidadPorSKU = Object.fromEntries(items.map(item => [item.sku, item.cantidad]));
+  const skus = items.map(item => item.sku);
   const memoria = {
-    fecha: new Date().toISOString(),
+    fecha: fechaActual,
+    creadoEn: memoriaAnterior?.creadoEn || memoriaAnterior?.fecha || fechaActual,
     skus: skus,
     cantidades: cantidadPorSKU,
+    items,
     totalItems: skus.length
   };
 
@@ -602,11 +691,11 @@ async function guardarMemoriaPedidoActual(sucursal, productsToOrder, tipoPedido 
     if (!state.pedidoMemoriaPorSucursal) state.pedidoMemoriaPorSucursal = {};
     state.pedidoMemoriaPorSucursal[sucursal] = memoria;
     console.log(`💾 Memoria de pedido guardada (${sucursal}, ${tipoPedido}): ${skus.length} SKUs con cantidades`);
-    return true;
+    return memoria;
   } catch (err) {
     console.error("❌ Error guardando memoria de pedido:", err);
     setStatus(`❌ No se pudo guardar el pedido de ${sucursal} en Firebase. No se generó el archivo.`, true);
-    return false;
+    return null;
   }
 }
 

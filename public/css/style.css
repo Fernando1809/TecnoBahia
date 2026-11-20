@@ -387,6 +387,47 @@ body.session-pending .container {
 
 .status-msg { margin-top: 8px; font-weight: 500; }
 
+.google-login-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.google-login-button:hover {
+  background: var(--chip-bg);
+}
+
+.google-login-icon {
+  color: #4285f4;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.login-divider::before,
+.login-divider::after {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+  content: "";
+}
+
 .aux-popup-overlay {
   position: fixed;
   inset: 0;

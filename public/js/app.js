@@ -253,6 +253,34 @@ async function exportResults() {
   const memoriaGuardada = await guardarMemoriaPedidoActual(sucursalPedido, productsToOrder, tipoPedido);
   if (!memoriaGuardada) return;
 
+  const detallePedido = XLSX.utils.aoa_to_sheet([
+    ["SKU", "Producto", "Cantidad", "Fecha de pedido", "Tipo"],
+    ...memoriaGuardada.items.map(item => [
+      item.sku,
+      item.producto,
+      item.cantidad,
+      item.fecha ? new Date(item.fecha) : "",
+      item.adicional ? "Adicional" : "Pedido"
+    ])
+  ], { cellDates: true });
+  detallePedido["!cols"] = [
+    { wch: 18 },
+    { wch: 48 },
+    { wch: 12 },
+    { wch: 22 },
+    { wch: 14 }
+  ];
+  for (let row = 2; row <= memoriaGuardada.items.length + 1; row++) {
+    const fechaCell = detallePedido[`D${row}`];
+    if (fechaCell && fechaCell.t === "d") fechaCell.z = "dd/mm/yyyy hh:mm";
+  }
+  let nombreHojaDetalle = "Detalle de pedido";
+  let sufijoHoja = 2;
+  while (wb.SheetNames.includes(nombreHojaDetalle)) {
+    nombreHojaDetalle = `Detalle de pedido ${sufijoHoja++}`;
+  }
+  XLSX.utils.book_append_sheet(wb, detallePedido, nombreHojaDetalle);
+
   XLSX.writeFile(wb, nombreArchivo, { bookType: "xlsx", cellDates: true });
   
   let filtroDescripcion = "";

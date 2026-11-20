@@ -406,6 +406,7 @@ function getProductosParaExportar() {
   // 2. APLICAR EL FILTRO DE INVENTARIO SELECCIONADO (Opcional)
   if (state.activeFilter === "pedido" && window.inventoryPedidoFilter) {
     productosParaExportar = productosParaExportar.filter(r => {
+      if (r._manual === true) return true;
       const inventario = r.Inventario;
       const estaEnMinimo = isProductoEnMinimo(r);
 
@@ -452,6 +453,23 @@ function renderTableDynamic(data, filterType) {
   if (selectPreviousOrderBtn && !selectPreviousOrderBtn.dataset.bound) {
     selectPreviousOrderBtn.addEventListener("click", selectPreviousOrderProducts);
     selectPreviousOrderBtn.dataset.bound = "true";
+  }
+  const viewSavedOrderBtn = document.getElementById("viewSavedOrderBtn");
+  if (viewSavedOrderBtn && !viewSavedOrderBtn.dataset.bound) {
+    viewSavedOrderBtn.addEventListener("click", mostrarPedidoGuardado);
+    viewSavedOrderBtn.dataset.bound = "true";
+  }
+  const closeSavedOrderBtn = document.getElementById("closeSavedOrderBtn");
+  if (closeSavedOrderBtn && !closeSavedOrderBtn.dataset.bound) {
+    closeSavedOrderBtn.addEventListener("click", cerrarPedidoGuardado);
+    closeSavedOrderBtn.dataset.bound = "true";
+  }
+  const savedOrderModal = document.getElementById("savedOrderModal");
+  if (savedOrderModal && !savedOrderModal.dataset.bound) {
+    savedOrderModal.addEventListener("click", event => {
+      if (event.target === savedOrderModal) cerrarPedidoGuardado();
+    });
+    savedOrderModal.dataset.bound = "true";
   }
 
   let columns = [];
@@ -626,6 +644,11 @@ function renderTableDynamic(data, filterType) {
   const totalPages = Math.ceil(totalItems / window.reportPageState.pageSize);
   const startIndex = (window.reportPageState.currentPage - 1) * window.reportPageState.pageSize;
   const paginatedData = sortedData.slice(startIndex, startIndex + window.reportPageState.pageSize);
+  const sucursalActual = state.inventoryOrigin || state.sucursalActiva || "Jiquilisco";
+  const pedidoAnteriorDetalles = new Map(
+    getPedidoMemoriaItems(state.pedidoMemoriaPorSucursal?.[sucursalActual])
+      .map(item => [item.sku, item])
+  );
 
   tbody.innerHTML = paginatedData.map(r => {
     let estadoClass = "";
@@ -698,7 +721,9 @@ function renderTableDynamic(data, filterType) {
 
         if (fueEnPedidoAnterior) {
           const cantidadTexto = cantidadAnterior > 0 ? ` (${cantidadAnterior})` : "";
-          displayValue = `${baseValue} <span style="margin-left:6px; color:var(--warning); font-size:11px; font-weight:bold;">↩️ anterior${cantidadTexto}</span>`;
+          const detalleAnterior = pedidoAnteriorDetalles.get(skuNormalizado);
+          const fechaTexto = detalleAnterior ? ` · ${formatPedidoDate(detalleAnterior.fecha)}` : "";
+          displayValue = `${baseValue} <span style="margin-left:6px; color:var(--warning); font-size:11px; font-weight:bold;" title="Fecha del último pedido: ${escapeHtml(formatPedidoDate(detalleAnterior?.fecha))}">↩️ anterior${cantidadTexto}${escapeHtml(fechaTexto)}</span>`;
         } else {
           displayValue = baseValue;
         }

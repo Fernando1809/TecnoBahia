@@ -41,6 +41,11 @@
         <input type="email" id="usuarioEmail" placeholder="Correo electrónico" required style="width: 100%; padding: 10px; box-sizing: border-box;" />
         <input type="password" id="usuarioPass" placeholder="Contraseña" required style="width: 100%; padding: 10px; box-sizing: border-box;" />
         <button id="btnIngresar" class="btn-secondary" style="width: 100%; padding: 10px; font-weight: bold;">🔑 Ingresar al sistema</button>
+        <div class="login-divider" aria-hidden="true"><span>o ingresa con</span></div>
+        <button id="btnGoogleLogin" class="google-login-button" type="button">
+          <span class="google-login-icon" aria-hidden="true">G</span>
+          Continuar con Google
+        </button>
         <div id="status" class="status-msg" style="text-align: center;"></div>
       </div>
     </div>
@@ -203,9 +208,34 @@
             </div>
           </div>
         </div>
+
+        <div id="savedOrderModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="savedOrderTitle">
+          <div style="width: 96%; max-width: 1000px; max-height: 85vh; overflow: auto;">
+            <h3 id="savedOrderTitle" style="margin: 0 0 8px;">📋 Pedido guardado</h3>
+            <p id="savedOrderSummary" style="margin: 0 0 16px;"></p>
+            <div style="overflow: auto; max-height: 60vh;">
+              <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                  <tr>
+                    <th>SKU</th>
+                    <th>Producto</th>
+                    <th>Cantidad</th>
+                    <th>Fecha de pedido</th>
+                    <th>Tipo</th>
+                  </tr>
+                </thead>
+                <tbody id="savedOrderBody"></tbody>
+              </table>
+            </div>
+            <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
+              <button id="closeSavedOrderBtn" type="button" class="btn-secondary">Cerrar</button>
+            </div>
+          </div>
+        </div>
         
         <div id="bulkSelectionToolbar" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
           <button id="selectPreviousOrderBtn" type="button" class="btn-secondary">↩️ Seleccionar pedido anterior</button>
+          <button id="viewSavedOrderBtn" type="button" class="btn-secondary">📋 Ver pedido guardado</button>
           <button id="bulkDeleteBtn" type="button" class="btn-secondary" style="background:#dc2626; color:white;" disabled>🗑 Eliminar seleccionados</button>
           <button id="clearBulkSelectionBtn" type="button" class="btn-secondary" style="display:none;">❌ Limpiar selección</button>
           <span id="bulkSelectionInfo" style="font-size:0.85rem; color:var(--muted);">Ninguno seleccionado</span>
@@ -495,6 +525,7 @@
     document.getElementById("adminSearchInput")?.addEventListener("input", () => applyAdminFilter());
     document.getElementById("btnClearRules")?.addEventListener("click", clearAllRules);
     document.getElementById("btnIngresar")?.addEventListener("click", unlockAdminPanel);
+    document.getElementById("btnGoogleLogin")?.addEventListener("click", () => window.signInWithGoogle());
     document.getElementById("btnImportExcelJiquilisco")?.addEventListener("click", () => importRulesExcel("Jiquilisco"));
     document.getElementById("btnImportExcelUsulutan")?.addEventListener("click", () => importRulesExcel("Usulután"));
     document.getElementById("sucursalSelector")?.addEventListener("change", (e) => onSucursalSelectorChange(e.target.value));
@@ -733,7 +764,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js";
     import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
-    import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
+    import { getAuth, GoogleAuthProvider, signInWithEmailAndPassword, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyB1gb9Q_3FfsEhES1QfliYd_SHtHz9VY5g",
@@ -756,6 +787,28 @@
     window.signInWithEmailAndPassword = signInWithEmailAndPassword;
     window.signOut = signOut;
     window.onAuthStateChanged = onAuthStateChanged;
+    window.__explicitSignInProvider = null;
+    window.signInWithGoogle = async () => {
+      const statusEl = document.getElementById("status");
+      window.__explicitSignInProvider = "google";
+      if (statusEl) {
+        statusEl.textContent = "Conectando con Google...";
+        statusEl.style.display = "block";
+      }
+      try {
+        await signInWithPopup(auth, new GoogleAuthProvider());
+        if (statusEl) statusEl.textContent = "";
+      } catch (error) {
+        window.__explicitSignInProvider = null;
+        console.error("Error iniciando sesión con Google:", error);
+        if (statusEl) {
+          statusEl.textContent = error.code === "auth/popup-closed-by-user"
+            ? "Se cerró la ventana de inicio de sesión."
+            : "No se pudo iniciar sesión con Google. Inténtalo de nuevo.";
+          statusEl.style.display = "block";
+        }
+      }
+    };
     
     window.__resolveFirebaseReady?.();
 
@@ -772,10 +825,26 @@
         void loadAuthenticatedData(user).catch(error => console.error("Error cargando datos de pedidos:", error));
 
         const rol = await getUserRole(user.uid, user.email);
+        const signInProvider = window.__explicitSignInProvider;
+        window.__explicitSignInProvider = null;
+        const roleStorageKey = `tecnobahia_role_${user.uid}`;
+        let previousRole = null;
+        try {
+          previousRole = localStorage.getItem(roleStorageKey);
+          localStorage.setItem(roleStorageKey, rol);
+        } catch (error) {
+          console.warn("No se pudo guardar el rol anterior del usuario:", error);
+        }
         state.userRole = rol;
         state.adminUnlocked = (rol === "admin");
         renderNavigationMenu(rol);
+        if (signInProvider === "google" && previousRole === "usuario" && rol === "admin") {
+          await mostrarAlerta("FELICIDADES TE HAN DADO PERMISOS DE ADMINISTRADOR", {
+            titulo: "¡Nuevo permiso!"
+          });
+        }
       } else {
+        window.__explicitSignInProvider = null;
         authenticatedDataUid = null;
         authenticatedDataPromise = null;
         state.adminUnlocked = false;
